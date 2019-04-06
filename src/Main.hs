@@ -213,8 +213,9 @@ enclWorker actionChan plotAreaTV name rf =
     encloseSegment (xiL, xiR) =
       let
         xiM = (xiL + xiR)/2
-        yiM_CR = evalRF () rf (fromRational xiM :: CDAR.CR) 
-        yiM_A = CDAR.require (yPrec + 10) yiM_CR
+        -- yiM_CR = evalRF () rf (fromRational xiM :: CDAR.CR) 
+        -- yiM_A = CDAR.require (yPrec + 10) yiM_CR
+        yiM_A = evalRF (yPrec + 10) rf (CDAR.toApprox (xPrec + 10) xiM) 
         xi_A = (CDAR.toApprox (xPrec + 10) xiL) `CDAR.unionA` (CDAR.toApprox (xPrec + 10) xiR)
         (D (_yi_A : yid_A : _)) = evalRF (yPrec + 10) rf (xD (xPrec + 10) xi_A)
       in
@@ -245,8 +246,8 @@ viewState s = div_ [] $
     , input_ [ size_ "5", value_ (ms $ show initialSegCount), onInput act_on_numSegments ]
     , br_ []
     ]
-    -- ++ [text (ms $ show s)] -- TODO
     ++  viewResult s
+    -- ++ [text (ms $ show s)]
     where
     act_on_function fMS = 
       case (parseRF $ fromMisoString fMS) of

@@ -1,0 +1,33 @@
+name: function-plotter
+version: 0.1.0.0
+cabal-version: 1.24
+build-type: Simple
+synopsis: browser-based exact function plotter
+description:
+    browser-based exact function plotter
+category: Maths
+author: Michal Konecny
+
+flag jsaddle
+  manual: True
+  default:
+    False
+  description:
+    Compile with JSaddle
+    
+executable function-plotter
+    main-is: Main.hs
+    other-modules:
+      Function
+    build-depends:
+        base, containers, time, mtl,
+        stm,
+        lens, parsec,
+        miso, jsaddle, ghcjs-dom,
+        cdar
+    hs-source-dirs: src
+    default-language: Haskell2010
+    ghc-options: -threaded -Wall -ferror-spans
+
+
+

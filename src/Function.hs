@@ -22,7 +22,7 @@ import qualified Text.Parsec.Prim as P hiding (try)
 import qualified Data.Map as Map
 
 
-import Data.CDAR -- hiding (showCR)
+import Data.CDAR
 
 data RF =
     RFVarX

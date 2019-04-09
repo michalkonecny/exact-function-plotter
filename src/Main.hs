@@ -38,17 +38,8 @@ import qualified Data.CDAR as CDAR
 
 import Function
 
--- logMapC :: Fractional a => a -> a -> a
--- logMapC c x = c*x*(1-x)
-
--- results :: [CR]
--- results = (iterate (logMapC c) x0)
---     where
---     c = 3.82
---     x0 = 1/8
-
--- cr2A :: Precision -> CR -> Approx 
--- cr2A d = limitSize d . require d
+-- example plotter input:
+-- 10*x*(1-100/6*x*x*(1-100/20*x*x*(1 - 100/42*x*x*(1 - 100/72*x*x*(1-100/110*x*x)))))
 
 {-
     A function is represented symbolically and rendered via a piece-wise affine enclosure.
@@ -145,7 +136,7 @@ main = do
     mountPoint = Nothing -- mount point for application (Nothing defaults to 'body')
 
 initialSegCount :: Int
-initialSegCount = 8
+initialSegCount = 50
 
 actionSub :: Chan Action -> Sub Action
 actionSub actionChan sink = void . liftIO . forkIO $ keepPassingActions
@@ -213,8 +204,6 @@ enclWorker actionChan plotAreaTV name rf =
     encloseSegment (xiL, xiR) =
       let
         xiM = (xiL + xiR)/2
-        -- yiM_CR = evalRF () rf (fromRational xiM :: CDAR.CR) 
-        -- yiM_A = CDAR.require (yPrec + 10) yiM_CR
         yiM_A = evalRF (yPrec + 10) rf (CDAR.toApprox (xPrec + 10) xiM) 
         xi_A = (CDAR.toApprox (xPrec + 10) xiL) `CDAR.unionA` (CDAR.toApprox (xPrec + 10) xiR)
         (D (_yi_A : yid_A : _)) = evalRF (yPrec + 10) rf (xD (xPrec + 10) xi_A)
@@ -239,16 +228,19 @@ enclWorker actionChan plotAreaTV name rf =
 viewState :: State -> View Action
 viewState s = div_ [] $ 
     [
-      text "function f(x) = " 
-    , input_ [ size_ "100", onInput act_on_function ]
+      text "Function f(x) = " 
+    , input_ [ size_ "80", onChange act_on_function ]
     , br_ []
-    , text "segments per view = " 
-    , input_ [ size_ "5", value_ (ms $ show initialSegCount), onInput act_on_numSegments ]
+    , text "Number of segments = " 
+    , input_ [ size_ "5", value_ (ms $ show initialSegCount), onChange act_on_numSegments ]
     , br_ []
     ]
-    ++  viewResult s
-    -- ++ [text (ms $ show s)]
+    ++ viewResult s
+    -- ++ [text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
+    -- ++ [text $ ms $ show $ product [1..10000]]
     where
+    -- sumSegment (PAPoint _ yLL yLR, PAPoint _ yRL yRR) =
+    --   sum $ map fromRational [yLL,yLR,yRL,yRR] :: Double
     act_on_function fMS = 
       case (parseRF $ fromMisoString fMS) of
         Right rf -> NewFunction ("f", rf)
@@ -262,31 +254,37 @@ viewResult :: State -> [View action]
 viewResult State {..} =
     [
         -- text (ms transformS),
-        svg_ [ Svg.height_ (ms (q2d h)), Svg.width_ (ms (q2d w)) ] $
+        svg_ [ viewHeightAttr, viewWidthAttr ] $
           -- pure $ g_ [ transform_ (ms transformS)] $
-            concat $ map renderEnclosure $ 
-              Map.toList _state_fn_encls
+            [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []] ++
+            xPoints ++
+            (concat $ map renderEnclosure $ Map.toList _state_fn_encls)
     ]
     where
+    viewHeightAttr = Svg.height_ (ms (q2d h))
+    viewWidthAttr = Svg.width_ (ms (q2d w))
     -- transformS = printf "translate(%f %f) scale(%f %f)" (-xLd) (-yLd) (w/(xRd-xLd)) (h/(yRd-yLd)) :: String
     -- transformS = printf "translate(%f %f)" (-xLd) (-yLd) :: String
     PlotArea (Rectangle xL xR yL yR) _ = _state_plotArea
     -- [xLd, xRd, yLd, yRd] = map fromRational [xL, xR, yL, yR] :: [Double]
     w = 800 :: Rational
-    h = 500 :: Rational
+    h = 800 :: Rational
     q2d :: Rational -> Double
     q2d = fromRational
+    transformPt (x,y) = (transformX x, transformY y)
+    transformX x = (x-xL)*w/(xR-xL)
+    transformY y = h-(y-yL)*h/(yR-yL)
+    xPoints = [line_ [x1_ "100", x2_ "100", y1_ "0", y2_ (ms (q2d h)), stroke_ "black"] []]
     renderEnclosure (_fName, enclosure) =
       map renderSegment enclosure
       where
       renderSegment (PAPoint lx lyL lyR, PAPoint rx ryL ryR) =
-        polygon_  [stroke_ "black", fill_ "none", points_ pointsMS] []
+        polygon_  [stroke_ "black", fill_ "pink", points_ pointsMS] []
         where
         pointsMS = ms $ intercalate " " $ map showPoint points
         showPoint (x,y) = showR x ++ "," ++ showR y
         showR :: Rational -> String
         showR q = show $ (fromRational q :: Double)
         points = map transformPt [(lx, lyL), (lx, lyR), (rx, ryR), (rx, ryL)]
-        transformPt (x,y) = ((x-xL)*w/(xR-xL), h-(y-yL)*h/(yR-yL))
 
 

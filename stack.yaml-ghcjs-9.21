@@ -11,9 +11,16 @@ setup-info:
 packages:
 - '.'
 - 'cdar'
+# - 'mixed-types-num'
+# - 'aern2/aern2-mp'
 
 extra-deps:
 - miso-0.21.2.0
 - ghcjs-dom-0.9.2.0@sha256:82c486ac00418394aef384dcc656ea1f7da971e29e7971ff36cff7c132834a8e
 - ghcjs-dom-jsffi-0.9.2.0@sha256:99199d4bf0e20b7786bb5582defb9a2ae68e5dc077593da0b60f4c9bcb11b20a
 - jsaddle-0.9.5.0@sha256:29c5194691def037e9481717bee2e15267d67b2e5ce116d06f38835673cfe7b8
+
+flags:
+  # aern2-mp:
+  #   UseCDAR: true
+  # #  UseCDAR: false

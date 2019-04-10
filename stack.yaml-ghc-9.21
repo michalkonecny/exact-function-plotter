@@ -3,6 +3,8 @@ resolver: lts-9.21
 packages:
 - '.'
 - 'cdar'
+# - 'mixed-types-num'
+# - 'aern2/aern2-mp'
 
 extra-deps:
 - miso-0.21.2.0
@@ -16,3 +18,6 @@ extra-deps:
 flags:
   miso:
     jsaddle: true
+  # aern2-mp:
+  #   UseCDAR: true
+  # #  UseCDAR: false

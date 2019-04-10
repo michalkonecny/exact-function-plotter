@@ -49,10 +49,27 @@ data RF =
 
 data Constant = Pi | E
   deriving (Show, Eq, Ord)
-data UnOp = Neg | Sqrt | Exp | Log | Sine | Cosine | Tan
+data UnOp = Neg | PowI Integer | Sqrt | Exp | Log | Sine | Cosine | Tan
   deriving (Show, Eq, Ord)
 data BinOp = Plus | Minus | Times | Divide | Power -- | Max
   deriving (Show, Eq, Ord)
+
+foldConstants :: RF -> RF
+foldConstants = aux
+  where
+  aux (RFUn op rf1) = 
+    case (aux rf1, op) of
+      (RFLit r1, Neg) -> RFLit (- r1)
+      (RFLit r1, PowI n) | n >= 0 -> RFLit (r1^n)
+      (rf1', _) -> RFUn op rf1'
+  aux (RFBin op rf1 rf2) = 
+    case (aux rf1, aux rf2, op) of
+      (RFLit r1, RFLit r2, Plus) -> RFLit (r1+r2)
+      (RFLit r1, RFLit r2, Minus) -> RFLit (r1-r2)
+      (RFLit r1, RFLit r2, Times) -> RFLit (r1*r2)
+      (RFLit r1, RFLit r2, Divide) -> RFLit (r1/r2)
+      (rf1', rf2', _) -> RFBin op rf1' rf2'
+  aux rf = rf
 
 evalRF :: (CanEvalRF a) => (PrecRF a) -> RF -> a -> a
 evalRF p rf0 x =
@@ -80,6 +97,7 @@ evalRF p rf0 x =
       (evalOp op r1, c1)
     where
     evalOp Neg = negRF
+    evalOp (PowI n) = powIRF n
     evalOp Sqrt = sqrtRF
     evalOp Exp = expRF
     evalOp Log = logRF
@@ -103,6 +121,7 @@ evalRF p rf0 x =
 class CanEvalRF a where
   type PrecRF a
   defaultPrecRF :: a -> PrecRF a
+  isIntegerRF :: a -> (Bool, Integer)
   litRF :: (PrecRF a) -> Rational -> a
   piRF :: PrecRF a -> a
   eRF :: PrecRF a -> a
@@ -111,6 +130,9 @@ class CanEvalRF a where
   mulRF :: a -> a -> a
   divRF :: a -> a -> a
   powRF :: a -> a -> a
+  powRF = powRFintExponent powRFI
+  powIRF :: Integer -> a -> a
+  powIRF = flip powRFI
   negRF :: a -> a
   sqrtRF :: a -> a
   expRF :: a -> a
@@ -119,9 +141,42 @@ class CanEvalRF a where
   cosRF :: a -> a
   tanRF :: a -> a
 
+powRFintExponent :: 
+  (CanEvalRF a) => 
+  (a -> Integer -> a) ->
+  a -> a -> a
+powRFintExponent powI x y 
+  | yisI = x `powI` yI
+  | otherwise = powRFviaExpLog x y
+  where
+  (yisI, yI) = isIntegerRF y
+
+powRFviaExpLog :: (CanEvalRF a) => a -> a -> a
+powRFviaExpLog x y = 
+  expRF (y `mulRF` (logRF x))
+
+powRFI :: (CanEvalRF a) => a -> Integer -> a
+powRFI xx ii
+  | ii < 0 = divRF (litRF (defaultPrecRF xx) 1) (pwr (-ii))
+  | otherwise = pwr ii
+  where
+  pwr i
+    | i == 0 = litRF (defaultPrecRF xx) 1
+    | otherwise = f xx i
+  -- the following is taken from https://hackage.haskell.org/package/base-4.12.0.0/docs/src/GHC.Real.html#%5E%5E
+  -- f : x0 ^ y0 = x ^ y
+  f x y | even y    = f (x `mulRF` x) (y `quot` 2)
+        | y == 1    = x
+        | otherwise = g (x `mulRF` x) (y `quot` 2) x         -- See Note [Half of y - 1]
+  -- g : x0 ^ y0 = (x ^ y) * z
+  g x y z | even y = g (x `mulRF` x) (y `quot` 2) z
+          | y == 1 = x `mulRF` z
+          | otherwise = g (x `mulRF` x) (y `quot` 2) (x `mulRF` z) -- See Note [Half of y - 1]
+
 instance CanEvalRF Double where
   type PrecRF Double = ()
   defaultPrecRF _ = ()
+  isIntegerRF = isIntegerRF_default
   litRF _ = fromRational
   piRF _ = pi
   eRF _ = exp 1
@@ -129,7 +184,7 @@ instance CanEvalRF Double where
   subRF = (-)
   mulRF = (*)
   divRF = (/)
-  powRF r1 r2 = exp (r2 * (log r1))
+  powRF = powRFintExponent (^^)
   negRF = negate
   sqrtRF = sqrt
   expRF = exp
@@ -138,9 +193,14 @@ instance CanEvalRF Double where
   cosRF = cos
   tanRF = tan
 
+isIntegerRF_default :: (RealFrac a) => a -> (Bool, Integer)
+isIntegerRF_default x = 
+  case properFraction x of (xI, r) -> (r == 0, xI)
+
 instance CanEvalRF CR where
   type PrecRF CR = ()
   defaultPrecRF _ = ()
+  isIntegerRF = isIntegerRF_A . require 10
   litRF _ = fromRational
   piRF _ = pi
   eRF _ = exp 1
@@ -148,7 +208,6 @@ instance CanEvalRF CR where
   subRF = (-)
   mulRF = (*)
   divRF = (/)
-  powRF r1 r2 = exp (r2 * (log r1))
   negRF = negate
   sqrtRF = sqrt
   expRF = exp
@@ -160,6 +219,7 @@ instance CanEvalRF CR where
 instance CanEvalRF Approx where
   type PrecRF Approx = Int
   defaultPrecRF _ = 64
+  isIntegerRF = isIntegerRF_A
   litRF p = toApprox p
   piRF p = piA p
   eRF p = expA (toApprox p 1)
@@ -167,14 +227,21 @@ instance CanEvalRF Approx where
   subRF = (-)
   mulRF = (*)
   divRF = (/)
-  powRF r1 r2 = expA (r2 * (logA r1))
   negRF = negate
   sqrtRF = sqrtA
   expRF = expA
   logRF = logA
-  -- sinRF = sinA
-  -- cosRF = cosA
-  -- tanRF = tanA
+  sinRF x = sinA (mBound x) x
+  cosRF x = cosA (mBound x) x
+  tanRF x = sinRF x / cosRF x
+
+isIntegerRF_A :: Approx -> (Bool, Integer)
+isIntegerRF_A (Approx _ m 0 s) 
+  | s >= 0 = (True, m*(2^s))
+  | otherwise = (r==0, i)
+  where
+  (i,r) = divMod m (2^(-s))
+isIntegerRF_A _ = (False, 0)
 
 -- higher-order automatic differentiation
 data D a = D { unD :: [a] }
@@ -186,6 +253,7 @@ instance (CanEvalRF a) => CanEvalRF (D a) where
   type PrecRF (D a) = PrecRF a
   defaultPrecRF (D (r:_)) = defaultPrecRF r
   defaultPrecRF _ = error "defaultPrecRF"
+  isIntegerRF = isIntegerRF_D
   litRF p r = D $ litRF p r : repeat (litRF p 0)
   piRF p = D $ piRF p : repeat (litRF p 0)
   eRF p = D $ eRF p : repeat (litRF p 0)
@@ -212,7 +280,34 @@ instance (CanEvalRF a) => CanEvalRF (D a) where
     (-..) = subRF
     (/..) = divRF
   divRF _ _ = error "divRF for D"
-  powRF r1 r2 = expRF (r2 `mulRF` (logRF r1))
+  powIRF n rr1@(D (r1:rs1)) 
+    | n == 0 = one
+    | n == 1 = rr1
+    | otherwise = D (powIRF n r1 : rest)
+    where
+    -- (f1(x)^n)' = n*f1'(x)*f1(x)^(n-1)
+    (D rest) =
+      (powIRF (n-1) rr1) *.. (nRF *.. rrd1)
+    rrd1 = D rs1
+    one = litRF (defaultPrecRF rr1) 1
+    nRF = litRF (defaultPrecRF rr1) (fromInteger n)
+    (*..) = mulRF
+  powIRF _ _ = error "powIRF for D"
+  powRF rr1@(D (r1:rs1)) rr2@(D (r2:rs2)) = D (powRF r1 r2 : rest)
+    where
+    -- (f1(x)^f2(x))' = (f1(x)^(f2(x)-1)) * (f2(x)*f1'(x)+f1(x)*f2'(x)*log(f1(x)))
+    -- source: https://www.wolframalpha.com/input/?i=(f(x)%5E(g(x)))%27
+    (D rest) =
+      (rr1 `powRF` (rr2 -.. one))
+      *..
+      ((rr2 *.. rrd1) +.. (rrd2 *.. rr1 *.. (logRF rr1)))
+    rrd1 = D rs1
+    rrd2 = D rs2
+    one = litRF (defaultPrecRF rr1) 1
+    (*..) = mulRF
+    (-..) = subRF
+    (+..) = addRF
+  powRF _ _ = error "powRF for D"
   negRF _rr1@(D rs1) = D (map negRF rs1)
   sqrtRF _rr1@(D (r1:rs1)) = res
     where
@@ -256,6 +351,11 @@ instance (CanEvalRF a) => CanEvalRF (D a) where
   cosRF _ = error "logRF for D"
   tanRF r1 = sinRF r1 `divRF` (cosRF r1)
 
+
+isIntegerRF_D :: (CanEvalRF a) => D a -> (Bool, Integer)
+isIntegerRF_D (D (v:_)) = isIntegerRF v
+isIntegerRF_D _ = (False, 0)
+
 -- parser
 -- adapted code from http://hackage.haskell.org/package/ParserFunction-0.1.0
 -- by Enzo Haussecker <enzo@ucsd.edu>
@@ -286,12 +386,20 @@ parseRF = P.parse expr "" . (:) '(' . flip (++) ")" . filter (/=' ')
     , [ prefix "exp"  (RFUn Exp)  ]
     , [ prefix "sqrt" (RFUn Sqrt) ]
     , [ prefix "log"  (RFUn Log)  ]
-    , [ binary "^" (RFBin Power) P.AssocRight ]
+    , [ binary "^" (powerRF) P.AssocRight ]
     , [ prefix "-" (RFUn Neg) ]
     , [ binary "*" (RFBin Times) P.AssocLeft, binary "/" (RFBin Divide) P.AssocLeft ]
     , [ binary "+" (RFBin Plus) P.AssocLeft, binary "-" (RFBin Minus) P.AssocLeft ]
     ] where binary s f a = P.Infix  (       P.string s  >> return f) a
             prefix s f   = P.Prefix (P.try (P.string s) >> return f)
+
+  powerRF rf1 rf2 = 
+    case foldConstants rf2 of
+      RFLit r -> 
+        case properFraction r of
+          (n,rm) | rm == 0 -> RFUn (PowI n) rf1
+          _ -> RFBin Power rf1 rf2
+      _ -> RFBin Power rf1 rf2
 
   factor :: P.Parser RF
   factor = do

@@ -143,9 +143,9 @@ main = do
     mountPoint = Nothing -- mount point for application (Nothing defaults to 'body')
 
 initialTargetYSegments :: Int
-initialTargetYSegments = 50
+initialTargetYSegments = 100
 initialMaxXSegments :: Int
-initialMaxXSegments = 64
+initialMaxXSegments = 1024
 initialMinXSegments :: Int
 initialMinXSegments = 8
 

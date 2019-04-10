@@ -70,14 +70,20 @@ data PlotArea =
   PlotArea
   {
     _plotArea_extents :: Rectangle Rational
-  , _plotArea_numSegments :: Int
+  , _plotArea_targetYSegments :: Int
+  , _plotArea_maxXSegments :: Int
+  , _plotArea_minXSegments :: Int
   }
   deriving (Show, Eq)
 
 plotArea_extents :: Lens' PlotArea (Rectangle Rational)
-plotArea_extents wrap (PlotArea a b) = fmap (\a' -> PlotArea a' b) (wrap a)
-plotArea_numSegments :: Lens' PlotArea Int
-plotArea_numSegments wrap (PlotArea a b) = fmap (\b' -> PlotArea a b') (wrap b)
+plotArea_extents wrap (PlotArea a b c d) = fmap (\a' -> PlotArea a' b c d) (wrap a)
+plotArea_targetYsegments :: Lens' PlotArea Int
+plotArea_targetYsegments wrap (PlotArea a b c d) = fmap (\b' -> PlotArea a b' c d) (wrap b)
+plotArea_maxXSegments :: Lens' PlotArea Int
+plotArea_maxXSegments wrap (PlotArea a b c d) = fmap (\c' -> PlotArea a b c' d) (wrap c)
+plotArea_minXSegments :: Lens' PlotArea Int
+plotArea_minXSegments wrap (PlotArea a b c d) = fmap (\d' -> PlotArea a b c d') (wrap d)
 
 data Rectangle a = Rectangle
   {
@@ -120,7 +126,11 @@ main = do
   plotAreaTV <- atomically $ newTVar initialPlotArea
   continueWithVars actionChan plotAreaTV
   where
-  initialPlotArea = PlotArea (Rectangle (-1) 1 (-1) 1) initialSegCount
+  initialPlotArea = 
+    PlotArea (Rectangle (-1) 1 (-1) 1) 
+      initialTargetYSegments
+      initialMaxXSegments
+      initialMinXSegments
   continueWithVars actionChan plotAreaTV =
     runJSaddle undefined $ startApp App {..}
     where
@@ -132,8 +142,12 @@ main = do
     subs   = [actionSub actionChan] 
     mountPoint = Nothing -- mount point for application (Nothing defaults to 'body')
 
-initialSegCount :: Int
-initialSegCount = 50
+initialTargetYSegments :: Int
+initialTargetYSegments = 50
+initialMaxXSegments :: Int
+initialMaxXSegments = 64
+initialMinXSegments :: Int
+initialMinXSegments = 8
 
 actionSub :: Chan Action -> Sub Action
 actionSub actionChan sink = void . liftIO . forkIO $ keepPassingActions
@@ -188,22 +202,35 @@ enclWorker actionChan plotAreaTV name rf =
     do
     writeChan actionChan (NewEnclosure (name, enclosure))
     where
-    PlotArea (Rectangle xL xR yL yR) n = plotArea
-    nQ = (toRational n) :: Rational
-    xTolerance = (xR - xL)/nQ
-    yTolerance = (yR - yL)/nQ
-    xPrec, yPrec :: CDAR.Precision
-    xPrec = round $ negate $ logBase 2 ((fromRational xTolerance) :: Double)
-    yPrec = round $ negate $ logBase 2 ((fromRational yTolerance) :: Double)
-    xPartition = [ ((nQ-i)*xL + i*xR)/nQ | i <- [0..nQ] ]
-    segments = zip xPartition (tail xPartition)
-    enclosure = catMaybes $ map encloseSegment segments
+    PlotArea (Rectangle xL xR yL yR) yN xMaxN xMinN = plotArea
+    yNQ = (toRational yN) :: Rational
+    xMinNQ = (toRational xMinN) :: Rational
+    xMaxNQ = (toRational xMaxN) :: Rational
+    maxSegSize = (xR - xL)/xMinNQ
+    minSegSize = (xR - xL)/xMaxNQ
+    yTolerance = (yR - yL)/yNQ
+    enclosure = aseg xL xR
+    aseg l r 
+      | r - l > maxSegSize = asegDivision
+      | r - l < 2 * minSegSize = catMaybes [lrEnclosure]
+      | enclosureGood lrEnclosure = catMaybes [lrEnclosure]
+      | otherwise = asegDivision
+      where
+      asegDivision = aseg l m ++ aseg m r
+        where m = (l+r)/2
+      lrEnclosure = encloseSegment (l,r)
+      enclosureGood (Just (PAPoint _ yiLL yiLR, PAPoint _ yiRL yiRR)) =
+        yiLR - yiLL <= yTolerance && yiRR - yiRL <= yTolerance
+      enclosureGood _ = False
+    -- xPartition = [ ((nQ-i)*xL + i*xR)/nQ | i <- [0..nQ] ]
+    -- segments = zip xPartition (tail xPartition)
+    -- enclosure = catMaybes $ map encloseSegment segments
     encloseSegment (xiL, xiR) =
       let
         xiM = (xiL + xiR)/2
-        yiM_A = evalRF (yPrec + 10) rf (CDAR.toApprox (xPrec + 10) xiM) 
-        xi_A = (CDAR.toApprox (xPrec + 10) xiL) `CDAR.unionA` (CDAR.toApprox (xPrec + 10) xiR)
-        (D (_yi_A : yid_A : _)) = evalRF (yPrec + 10) rf (xD (xPrec + 10) xi_A)
+        yiM_A = evalRF (yPrec) rf (CDAR.toApprox (xPrec) xiM) 
+        xi_A = (CDAR.toApprox (xPrec) xiL) `CDAR.unionA` (CDAR.toApprox xPrec xiR)
+        (D (_yi_A : yid_A : _)) = evalRF (yPrec) rf (xD xPrec xi_A)
       in
       case (CDAR.lowerBound yiM_A, CDAR.upperBound yiM_A, CDAR.lowerBound yid_A, CDAR.upperBound yid_A) of
         (CDAR.Finite yiML_D, CDAR.Finite  yiMR_D, CDAR.Finite  yidL_D, CDAR.Finite  yidR_D) ->
@@ -220,31 +247,49 @@ enclWorker actionChan plotAreaTV name rf =
           in
           Just (PAPoint xiL yiLL yiLR, PAPoint xiR yiRL yiRR)
         _ -> Nothing
+    xPrec, yPrec :: CDAR.Precision
+    xPrec = 10 + (round $ negate $ logBase 2 ((fromRational minSegSize) :: Double))
+    yPrec = 10 + (round $ negate $ logBase 2 ((fromRational yTolerance) :: Double))
 
 -- | Constructs a virtual DOM from a state
 viewState :: State -> View Action
-viewState s = div_ [] $ 
+viewState s@State{..} = div_ [] $ 
     [
       text "Function f(x) = " 
     , input_ [ size_ "80", onChange act_on_function ]
     , br_ []
-    , text "Number of segments = " 
-    , input_ [ size_ "5", value_ (ms $ show initialSegCount), onChange act_on_numSegments ]
+    , text "Enclosure width tolerance = " 
+    , input_ [ size_ "5", value_ (ms $ show _plotArea_targetYSegments), onChange act_on_targetYsegs ]
+    , br_ []
+    , text "Maximum segments = " 
+    , input_ [ size_ "5", value_ (ms $ show _plotArea_maxXSegments), onChange act_on_maxXsegs ]
+    , br_ []
+    , text "Minimum segments = " 
+    , input_ [ size_ "5", value_ (ms $ show _plotArea_minXSegments), onChange act_on_minXsegs ]
     , br_ []
     ]
     ++ viewResult s
     -- ++ [text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
     -- ++ [text $ ms $ show $ product [1..10000]]
     where
+    PlotArea{..} = _state_plotArea
     -- sumSegment (PAPoint _ yLL yLR, PAPoint _ yRL yRR) =
     --   sum $ map fromRational [yLL,yLR,yRL,yRR] :: Double
     act_on_function fMS = 
       case (parseRF $ fromMisoString fMS) of
         Right rf -> NewFunction ("f", rf)
-        Left errmsg -> NoOp -- TODO
-    act_on_numSegments nMS = 
+        Left _errmsg -> NoOp -- TODO
+    act_on_targetYsegs nMS = 
         case reads (fromMisoString nMS) of
-            [(n,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_numSegments .~ n)
+            [(n,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_targetYsegments .~ n)
+            _ -> NoOp
+    act_on_maxXsegs nMS = 
+        case reads (fromMisoString nMS) of
+            [(n,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_maxXSegments .~ n)
+            _ -> NoOp
+    act_on_minXsegs nMS = 
+        case reads (fromMisoString nMS) of
+            [(n,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_minXSegments .~ n)
             _ -> NoOp
 
 viewResult :: State -> [View action]
@@ -262,7 +307,7 @@ viewResult State {..} =
     viewWidthAttr = Svg.width_ (ms (q2d w))
     -- transformS = printf "translate(%f %f) scale(%f %f)" (-xLd) (-yLd) (w/(xRd-xLd)) (h/(yRd-yLd)) :: String
     -- transformS = printf "translate(%f %f)" (-xLd) (-yLd) :: String
-    PlotArea (Rectangle xL xR yL yR) _ = _state_plotArea
+    PlotArea (Rectangle xL xR yL yR) _ _ _ = _state_plotArea
     -- [xLd, xRd, yLd, yRd] = map fromRational [xL, xR, yL, yR] :: [Double]
     w = 800 :: Rational
     h = 800 :: Rational

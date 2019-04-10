@@ -219,8 +219,15 @@ enclWorker actionChan plotAreaTV name rf =
       asegDivision = aseg l m ++ aseg m r
         where m = (l+r)/2
       lrEnclosure = encloseSegment (l,r)
-      enclosureGood (Just (PAPoint _ yiLL yiLR, PAPoint _ yiRL yiRR)) =
-        yiLR - yiLL <= yTolerance && yiRR - yiRL <= yTolerance
+      enclosureGood (Just (PAPoint xiL yiLL yiLR, PAPoint xiR yiRL yiRR)) =
+        (yiRW <= yTolerance || (xiW*yiRW/yiW) <= yTolerance)
+        && 
+        (yiLW <= yTolerance || (xiW*yiLW/yiW) <= yTolerance)
+        where
+        yiLW = yiLR - yiLL
+        yiRW = yiRR - yiRL
+        xiW = xiR - xiL
+        yiW = max (abs $ yiRL - yiLL) (abs $ yiRR - yiLL)
       enclosureGood _ = False
     -- xPartition = [ ((nQ-i)*xL + i*xR)/nQ | i <- [0..nQ] ]
     -- segments = zip xPartition (tail xPartition)

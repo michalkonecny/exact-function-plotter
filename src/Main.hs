@@ -256,9 +256,9 @@ viewResult State {..} =
         -- text (ms transformS),
         svg_ [ viewHeightAttr, viewWidthAttr ] $
           -- pure $ g_ [ transform_ (ms transformS)] $
-            [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []] ++
-            xPoints ++
-            (concat $ map renderEnclosure $ Map.toList _state_fn_encls)
+            [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
+            ++ (concat $ map renderEnclosure $ Map.toList _state_fn_encls)
+            ++ concat xGuides ++ concat yGuides
     ]
     where
     viewHeightAttr = Svg.height_ (ms (q2d h))
@@ -274,7 +274,37 @@ viewResult State {..} =
     transformPt (x,y) = (transformX x, transformY y)
     transformX x = (x-xL)*w/(xR-xL)
     transformY y = h-(y-yL)*h/(yR-yL)
-    xPoints = [line_ [x1_ "100", x2_ "100", y1_ "0", y2_ (ms (q2d h)), stroke_ "black"] []]
+    xGuides = 
+      [ let xiMS = ms (q2d $ transformX xi) in
+        [line_ 
+         [x1_ xiMS, x2_ xiMS, y1_ "0", y2_ (ms (q2d h)), 
+          stroke_ "black", strokeDasharray_ "1 3"
+         ] []
+         ,
+         text_ [x_ xiMS, y_ (ms (q2d h - 20))] [text (ms (q2d xi))]
+        ]
+      | xi <- xGuidePoints
+      ]
+      where
+      xGuidePoints = [x1, x1+gran .. xR]
+      gran = 10.0 ^^ (round $ logBase 10 (q2d $ (xR - xL)/10) :: Int)
+      x1 = gran * (fromInteger $ ceiling (xL / gran)) :: Rational
+    yGuides = 
+      [ let yiMS = ms (q2d $ transformY yi) in
+        [line_ 
+         [y1_ yiMS, y2_ yiMS, x1_ "0", x2_ (ms (q2d w)), 
+          stroke_ "black", strokeDasharray_ "1 3"
+         ] []
+         ,
+         text_ [y_ yiMS, x_ (ms (q2d w - 30))] [text (ms (q2d yi))]
+        ]
+      | yi <- yGuidePoints
+      ]
+      where
+      yGuidePoints = [y1, y1+gran .. yR]
+      gran = 10.0 ^^ (round $ logBase 10 (q2d $ (yR - yL)/10) :: Int)
+      y1 = gran * (fromInteger $ ceiling (yL / gran)) :: Rational
+    
     renderEnclosure (_fName, enclosure) =
       map renderSegment enclosure
       where

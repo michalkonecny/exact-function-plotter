@@ -38,9 +38,6 @@ import qualified Data.CDAR as CDAR
 
 import Function
 
--- example plotter input:
--- 10*x*(1-100/6*x*x*(1-100/20*x*x*(1 - 100/42*x*x*(1 - 100/72*x*x*(1-100/110*x*x)))))
-
 {-
     A function is represented symbolically and rendered via a piece-wise affine enclosure.
     The direction of each segment is determined by an enclosure of the derivative

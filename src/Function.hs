@@ -7,6 +7,20 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-
+
+  Functions given by simple symbolic expressions,
+  their evaluation and automatic differentiation
+  and parsing.
+
+  Examples that plot well over [-1,1]:
+  
+    3*exp (2*(x-x*x*x-1))
+
+    10*x*(1-100/6*x*x*(1-100/20*x*x*(1 - 100/42*x*x*(1 - 100/72*x*x*(1-100/110*x*x)))))
+
+-}
+
 -- | Haskell module declaration
 module Function where
 
@@ -17,12 +31,13 @@ import Control.Applicative ((<|>))
 
 import qualified Text.ParserCombinators.Parsec.Expr as P
 import qualified Text.ParserCombinators.Parsec      as P
-import qualified Text.Parsec.Prim as P hiding (try)
+-- import qualified Text.Parsec.Prim as P hiding (try)
 
 import qualified Data.Map as Map
 
 
 import Data.CDAR
+
 
 data RF =
     RFVarX

@@ -29,7 +29,7 @@ import Data.Maybe (catMaybes)
 -- | Miso framework import
 import qualified Miso
 import Miso hiding (at)
-import Miso.String (ms, fromMisoString)
+import Miso.String (MisoString, ms, fromMisoString)
 import Miso.Svg as Svg
 
 
@@ -93,6 +93,15 @@ data Rectangle a = Rectangle
     ,   _rect_up :: a
   }
   deriving (Show, Eq)
+
+rect_left :: Lens' (Rectangle a) a
+rect_left wrap (Rectangle a b c d) = fmap (\a' -> Rectangle a' b c d) (wrap a)
+rect_right :: Lens' (Rectangle a) a
+rect_right wrap (Rectangle a b c d) = fmap (\b' -> Rectangle a b' c d) (wrap b)
+rect_down :: Lens' (Rectangle a) a
+rect_down wrap (Rectangle a b c d) = fmap (\c' -> Rectangle a b c' d) (wrap c)
+rect_up :: Lens' (Rectangle a) a
+rect_up wrap (Rectangle a b c d) = fmap (\d' -> Rectangle a b c d') (wrap d)
 
 type PAEnclosure = [PASegment]
 
@@ -220,9 +229,9 @@ enclWorker actionChan plotAreaTV name rf =
         where m = (l+r)/2
       lrEnclosure = encloseSegment (l,r)
       enclosureGood (Just (PAPoint xiL yiLL yiLR, PAPoint xiR yiRL yiRR)) =
-        (yiRW <= yTolerance || (xiW*yiRW/yiW) <= yTolerance)
+        (yiRW <= yTolerance || (yiW > 0) && (xiW*yiRW/yiW) <= yTolerance)
         && 
-        (yiLW <= yTolerance || (xiW*yiLW/yiW) <= yTolerance)
+        (yiLW <= yTolerance || (yiW > 0) && (xiW*yiLW/yiW) <= yTolerance)
         where
         yiLW = yiLR - yiLL
         yiRW = yiRR - yiRL
@@ -255,8 +264,8 @@ enclWorker actionChan plotAreaTV name rf =
           Just (PAPoint xiL yiLL yiLR, PAPoint xiR yiRL yiRR)
         _ -> Nothing
     xPrec, yPrec :: CDAR.Precision
-    xPrec = 10 + (round $ negate $ logBase 2 ((fromRational minSegSize) :: Double))
-    yPrec = 10 + (round $ negate $ logBase 2 ((fromRational yTolerance) :: Double))
+    xPrec = 10 + (round $ negate $ logBase 2 (q2d minSegSize))
+    yPrec = 10 + (round $ negate $ logBase 2 (q2d yTolerance))
 
 -- | Constructs a virtual DOM from a state
 viewState :: State -> View Action
@@ -273,6 +282,14 @@ viewState s@State{..} = div_ [] $
     , br_ []
     , text "Minimum segments = " 
     , input_ [ size_ "5", value_ (ms $ show _plotArea_minXSegments), onChange act_on_minXsegs ]
+    , br_ []
+    , text "Plot area: " 
+    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_left _plotArea_extents)), onChange act_on_xL ]
+    , text " <= x <= " 
+    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_right _plotArea_extents)), onChange act_on_xR ]
+    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_down _plotArea_extents)), onChange act_on_yL ]
+    , text " <= y <= " 
+    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_up _plotArea_extents)), onChange act_on_yR ]
     , br_ []
     ]
     ++ viewResult s
@@ -298,6 +315,22 @@ viewState s@State{..} = div_ [] $
         case reads (fromMisoString nMS) of
             [(n,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_minXSegments .~ n)
             _ -> NoOp
+    act_on_xL xMS = 
+        case reads (fromMisoString xMS) of
+            [(xL,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_extents . rect_left .~ (d2q xL))
+            _ -> NoOp
+    act_on_xR xMS = 
+        case reads (fromMisoString xMS) of
+            [(xR,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_extents . rect_right .~ (d2q xR))
+            _ -> NoOp
+    act_on_yL yMS = 
+        case reads (fromMisoString yMS) of
+            [(yL,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_extents . rect_down .~ (d2q yL))
+            _ -> NoOp
+    act_on_yR yMS = 
+        case reads (fromMisoString yMS) of
+            [(yR,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_extents . rect_up .~ (d2q yR))
+            _ -> NoOp
 
 viewResult :: State -> [View action]
 viewResult State {..} =
@@ -312,14 +345,10 @@ viewResult State {..} =
     where
     viewHeightAttr = Svg.height_ (ms (q2d h))
     viewWidthAttr = Svg.width_ (ms (q2d w))
-    -- transformS = printf "translate(%f %f) scale(%f %f)" (-xLd) (-yLd) (w/(xRd-xLd)) (h/(yRd-yLd)) :: String
-    -- transformS = printf "translate(%f %f)" (-xLd) (-yLd) :: String
     PlotArea (Rectangle xL xR yL yR) _ _ _ = _state_plotArea
-    -- [xLd, xRd, yLd, yRd] = map fromRational [xL, xR, yL, yR] :: [Double]
+    -- [xLd, xRd, yLd, yRd] = map q2d [xL, xR, yL, yR]
     w = 800 :: Rational
     h = 800 :: Rational
-    q2d :: Rational -> Double
-    q2d = fromRational
     transformPt (x,y) = (transformX x, transformY y)
     transformX x = (x-xL)*w/(xR-xL)
     transformY y = h-(y-yL)*h/(yR-yL)
@@ -367,3 +396,11 @@ viewResult State {..} =
         points = map transformPt [(lx, lyL), (lx, lyR), (rx, ryR), (rx, ryL)]
 
 
+q2d :: Rational -> Double
+q2d = fromRational
+
+d2q :: Double -> Rational
+d2q = toRational
+
+s2ms :: String -> MisoString
+s2ms = ms

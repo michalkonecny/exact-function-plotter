@@ -387,6 +387,7 @@ viewResult State {..} =
         -- text (ms transformS),
         svg_ 
           [ viewHeightAttr, viewWidthAttr
+          , Miso.style_ (Map.singleton "user-select" "none")
           , Svg.onMouseDown (SetDrag True) 
           , Svg.onMouseUp (SetDrag False) 
           , Svg.onMouseOut (SetDrag False)

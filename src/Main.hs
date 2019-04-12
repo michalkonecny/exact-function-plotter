@@ -52,19 +52,22 @@ data State
     , _state_fn_exprs :: Map.Map String RF
     , _state_fn_workers :: Map.Map String ThreadId
     , _state_fn_encls :: Map.Map String PAEnclosure
+    , _state_plotArea_Movement :: PlotAreaMovement
   }
   deriving (Show, Eq)
 
 -- makeLenses ''State
 
 state_plotArea :: Lens' State PlotArea
-state_plotArea wrap (State a b c d) = fmap (\a' -> State a' b c d) (wrap a)
+state_plotArea wrap (State a b c d e) = fmap (\a' -> State a' b c d e) (wrap a)
 state_fn_exprs :: Lens' State (Map.Map String RF)
-state_fn_exprs wrap (State a b c d) = fmap (\b' -> State a b' c d) (wrap b)
+state_fn_exprs wrap (State a b c d e) = fmap (\b' -> State a b' c d e) (wrap b)
 state_fn_workers :: Lens' State (Map.Map String ThreadId)
-state_fn_workers wrap (State a b c d) = fmap (\c' -> State a b c' d) (wrap c)
+state_fn_workers wrap (State a b c d e) = fmap (\c' -> State a b c' d e) (wrap c)
 state_fn_encls :: Lens' State (Map.Map String PAEnclosure)
-state_fn_encls wrap (State a b c d) = fmap (\d' -> State a b c d') (wrap d)
+state_fn_encls wrap (State a b c d e) = fmap (\d' -> State a b c d' e) (wrap d)
+state_fn_plotArea_Movement :: Lens' State PlotAreaMovement
+state_fn_plotArea_Movement wrap (State a b c d e) = fmap (\e' -> State a b c d e') (wrap e)
 
 data PlotArea = 
   PlotArea
@@ -103,6 +106,16 @@ rect_down wrap (Rectangle a b c d) = fmap (\c' -> Rectangle a b c' d) (wrap c)
 rect_up :: Lens' (Rectangle a) a
 rect_up wrap (Rectangle a b c d) = fmap (\d' -> Rectangle a b c d') (wrap d)
 
+data PlotAreaMovement =
+  PlotAreaMovement
+  {
+    _plotAreaMovement_mousePos :: Maybe (Int, Int)
+  }
+  deriving (Show, Eq)
+
+plotAreaMovement_mousePos :: Lens' PlotAreaMovement (Maybe (Int, Int))
+plotAreaMovement_mousePos wrap (PlotAreaMovement a) = fmap (\a' -> PlotAreaMovement a') (wrap a)
+
 type PAEnclosure = [PASegment]
 
 type PASegment = (PAPoint Rational, PAPoint Rational)
@@ -125,6 +138,7 @@ data Action
   | NewFunction !(String, RF)
   | NewWorker !(String, ThreadId)
   | NewEnclosure !(String, PAEnclosure)
+  | MouseMove (Int,Int)
   deriving (Show, Eq)
 
 -- | Entry point for a miso application
@@ -140,15 +154,17 @@ main = do
       initialTargetYSegments
       initialMaxXSegments
       initialMinXSegments
+  initialPlotAreaMovement = 
+    PlotAreaMovement Nothing
   continueWithVars actionChan plotAreaTV =
     runJSaddle undefined $ startApp App {..}
     where
     initialAction = NoOp
-    model  = State initialPlotArea Map.empty Map.empty Map.empty
+    model  = State initialPlotArea Map.empty Map.empty Map.empty initialPlotAreaMovement
     update = updateState actionChan plotAreaTV
     view   = viewState
     events = defaultEvents
-    subs   = [actionSub actionChan] 
+    subs   = [actionSub actionChan, dragSub] 
     mountPoint = Nothing -- mount point for application (Nothing defaults to 'body')
 
 initialTargetYSegments :: Int
@@ -166,6 +182,10 @@ actionSub actionChan sink = void . liftIO . forkIO $ keepPassingActions
     action <- readChan actionChan
     sink action
     keepPassingActions
+
+dragSub :: Sub Action
+dragSub =
+  mouseSub MouseMove
 
 -- | Updates state, optionally introducing side effects
 updateState :: (Chan Action) -> (TVar PlotArea) -> Action -> State -> Effect Action State
@@ -187,6 +207,8 @@ updateState _ _ (NewWorker (name, tid)) s =
       pure NoOp
 updateState _ _ (NewEnclosure (name, encl)) s =
   noEff $ s & state_fn_encls . at name .~ Just encl
+updateState _ _ (MouseMove pos) s =
+  noEff $ s & state_fn_plotArea_Movement . plotAreaMovement_mousePos .~ Just pos
 updateState _ _ _ s = noEff s
 
 enclWorker :: (Chan Action) -> (TVar PlotArea) -> String -> RF -> IO ()
@@ -293,6 +315,7 @@ viewState s@State{..} = div_ [] $
     , br_ []
     ]
     ++ viewResult s
+    ++ [text (ms $ show $ _state_plotArea_Movement)]
     -- ++ [text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
     -- ++ [text $ ms $ show $ product [1..10000]]
     where

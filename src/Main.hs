@@ -32,6 +32,9 @@ import Miso hiding (at)
 import Miso.String (MisoString, ms, fromMisoString)
 import Miso.Svg as Svg
 
+-- import GHCJS.Marshal
+-- import JavaScript.Object
+-- import JavaScript.Object.Internal
 
 import qualified Data.CDAR as CDAR
 -- import Data.CDAR (Dyadic)
@@ -109,12 +112,15 @@ rect_up wrap (Rectangle a b c d) = fmap (\d' -> Rectangle a b c d') (wrap d)
 data PlotAreaMovement =
   PlotAreaMovement
   {
-    _plotAreaMovement_mousePos :: Maybe (Int, Int)
+    _plotAreaMovement_mouseDrag :: Bool
+  , _plotAreaMovement_mousePos :: Maybe (Int, Int)
   }
   deriving (Show, Eq)
 
+plotAreaMovement_mouseDrag :: Lens' PlotAreaMovement Bool
+plotAreaMovement_mouseDrag wrap (PlotAreaMovement a b) = fmap (\a' -> PlotAreaMovement a' b) (wrap a)
 plotAreaMovement_mousePos :: Lens' PlotAreaMovement (Maybe (Int, Int))
-plotAreaMovement_mousePos wrap (PlotAreaMovement a) = fmap (\a' -> PlotAreaMovement a') (wrap a)
+plotAreaMovement_mousePos wrap (PlotAreaMovement a b) = fmap (\b' -> PlotAreaMovement a b') (wrap b)
 
 type PAEnclosure = [PASegment]
 
@@ -138,6 +144,7 @@ data Action
   | NewFunction !(String, RF)
   | NewWorker !(String, ThreadId)
   | NewEnclosure !(String, PAEnclosure)
+  | SetDrag Bool
   | MouseMove (Int,Int)
   deriving (Show, Eq)
 
@@ -147,7 +154,8 @@ main = do
   -- pure ()
   actionChan <- newChan
   plotAreaTV <- atomically $ newTVar initialPlotArea
-  continueWithVars actionChan plotAreaTV
+  dragTV <- atomically $ newTVar False
+  continueWithVars actionChan plotAreaTV dragTV
   where
   initialPlotArea = 
     PlotArea (Rectangle (-1) 1 (-1) 1) 
@@ -155,16 +163,16 @@ main = do
       initialMaxXSegments
       initialMinXSegments
   initialPlotAreaMovement = 
-    PlotAreaMovement Nothing
-  continueWithVars actionChan plotAreaTV =
+    PlotAreaMovement False Nothing
+  continueWithVars actionChan plotAreaTV dragTV =
     runJSaddle undefined $ startApp App {..}
     where
     initialAction = NoOp
     model  = State initialPlotArea Map.empty Map.empty Map.empty initialPlotAreaMovement
-    update = updateState actionChan plotAreaTV
+    update = flip $ updateState actionChan plotAreaTV dragTV
     view   = viewState
     events = defaultEvents
-    subs   = [actionSub actionChan, dragSub] 
+    subs   = [actionSub actionChan, dragSub dragTV] 
     mountPoint = Nothing -- mount point for application (Nothing defaults to 'body')
 
 initialTargetYSegments :: Int
@@ -183,46 +191,77 @@ actionSub actionChan sink = void . liftIO . forkIO $ keepPassingActions
     sink action
     keepPassingActions
 
-dragSub :: Sub Action
-dragSub =
+dragSub :: TVar Bool -> Sub Action
+dragSub _dragTV =
   mouseSub MouseMove
+  -- do
+  -- windowAddEventListener "mousemove" mouseListener
+  -- where
+  -- mouseListener mouseEvent = do
+  --   isDrag <- liftIO $ atomically $ readTVar dragTV
+  --   if isDrag 
+  --     then do
+  --       Just x <- fromJSVal =<< getProp "clientX" (Object mouseEvent)
+  --       Just y <- fromJSVal =<< getProp "clientY" (Object mouseEvent)
+  --       liftIO (sink $ MouseMove (x,y))
+  --     else pure ()
 
 -- | Updates state, optionally introducing side effects
-updateState :: (Chan Action) -> (TVar PlotArea) -> Action -> State -> Effect Action State
-updateState _ plotAreaTV (NewPlotArea pa) s =
-  ((s & state_plotArea .~ pa) <#) $
-    liftIO $ do
-      atomically $ writeTVar plotAreaTV pa
-      pure NoOp
-updateState actionChan plotAreaTV (NewFunction (name, rf)) s =
-  ((s & state_fn_exprs . at name .~ Just rf) <#) $
-      liftIO $ do
-        printf "NewFunction %s\n" name
-        threadId <- forkIO $ enclWorker actionChan plotAreaTV name rf
+updateState :: (Chan Action) -> (TVar PlotArea) -> (TVar Bool) -> State -> Action -> Effect Action State
+updateState actionChan plotAreaTV dragTV s action =
+  case action of
+    (NewPlotArea pa) ->
+      ((s & state_plotArea .~ pa) <#) $ liftIO $ do
+        atomically $ writeTVar plotAreaTV pa
+        pure NoOp
+    (NewFunction (name, rf)) ->
+      ((s & state_fn_exprs . at name .~ Just rf) <#) $ liftIO $ do
+        threadId <- forkIO $ enclWorker actionChan plotAreaTV dragTV name rf
         pure $ NewWorker (name, threadId) 
-updateState _ _ (NewWorker (name, tid)) s =
-  ((s & state_fn_workers . at name .~ Just tid) <# ) $
-    liftIO $ do
-      printf "NewWorker %s %s" name (show tid) -- MAYBEFIX this message is not showing in Firefox console ..
-      pure NoOp
-updateState _ _ (NewEnclosure (name, encl)) s =
-  noEff $ s & state_fn_encls . at name .~ Just encl
-updateState _ _ (MouseMove pos) s =
-  noEff $ s & state_fn_plotArea_Movement . plotAreaMovement_mousePos .~ Just pos
-updateState _ _ _ s = noEff s
+    (NewWorker (name, tid)) ->
+      ((s & state_fn_workers . at name .~ Just tid) <# ) $ liftIO $ do
+        pure NoOp
+    (NewEnclosure (name, encl)) ->
+      noEff $ s & state_fn_encls . at name .~ Just encl
+    SetDrag isDrag ->
+      (s' <#) $ liftIO $ do
+        atomically $ writeTVar dragTV isDrag
+        pure NoOp
+      where
+      s' = s & state_fn_plotArea_Movement . plotAreaMovement_mouseDrag .~ isDrag
+    (MouseMove pos@(x,y)) ->
+      noEff s2
+      where
+      isDrag = s ^. state_fn_plotArea_Movement . plotAreaMovement_mouseDrag
+      s1 = s 
+        & state_fn_plotArea_Movement . plotAreaMovement_mousePos .~ Just pos
+      s2 
+        | isDrag = s1 & state_plotArea . plotArea_extents %~ moveExtents
+        | otherwise = s1
+      moveExtents extents@(Rectangle xL xR yL yR) =
+        case s ^. state_fn_plotArea_Movement . plotAreaMovement_mousePos of
+          Just (oldX, oldY) -> 
+            let
+              xd = (toRational $ x - oldX) *(xR-xL) / w
+              yd = (toRational $ y - oldY) *(yR-yL) / h
+            in
+            Rectangle (xL - xd) (xR - xd) (yL + yd) (yR + yd)
+          _ -> extents
+    NoOp -> noEff s
 
-enclWorker :: (Chan Action) -> (TVar PlotArea) -> String -> RF -> IO ()
-enclWorker actionChan plotAreaTV name rf =
+enclWorker :: Chan Action -> TVar PlotArea -> TVar Bool -> String -> RF -> IO ()
+enclWorker actionChan plotAreaTV dragTV name rf =
   waitForAreaAndAct Nothing
   where
   waitForAreaAndAct maybePrevThreadArea =
     do
     (maybePrevThreadId, plotArea) <- atomically $ do
       pa <- readTVar plotAreaTV
+      isDrag <- readTVar dragTV
       case maybePrevThreadArea of
         Nothing -> pure (Nothing, pa)
         Just (threadId, oldpa) ->
-          if oldpa == pa then retry
+          if isDrag || oldpa == pa then retry
           else pure (Just threadId, pa)
     case maybePrevThreadId of
       Nothing -> pure ()
@@ -260,9 +299,6 @@ enclWorker actionChan plotAreaTV name rf =
         xiW = xiR - xiL
         yiW = min (abs $ yiRL - yiLL) (abs $ yiRR - yiLL)
       enclosureGood _ = False
-    -- xPartition = [ ((nQ-i)*xL + i*xR)/nQ | i <- [0..nQ] ]
-    -- segments = zip xPartition (tail xPartition)
-    -- enclosure = catMaybes $ map encloseSegment segments
     encloseSegment (xiL, xiR) =
       let
         xiM = (xiL + xiR)/2
@@ -315,9 +351,9 @@ viewState s@State{..} = div_ [] $
     , br_ []
     ]
     ++ viewResult s
-    ++ [text (ms $ show $ _state_plotArea_Movement)]
-    -- ++ [text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
-    -- ++ [text $ ms $ show $ product [1..10000]]
+    ++ [br_ [], text (ms $ show $ _state_plotArea_Movement)]
+    -- ++ [br_ [], text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
+    -- ++ [br_ [], text $ ms $ show $ product [1..10000]]
     where
     PlotArea{..} = _state_plotArea
     -- sumSegment (PAPoint _ yLL yLR, PAPoint _ yRL yRR) =
@@ -355,12 +391,19 @@ viewState s@State{..} = div_ [] $
             [(yR,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_extents . rect_up .~ (d2q yR))
             _ -> NoOp
 
-viewResult :: State -> [View action]
+w = 800 :: Rational
+h = 800 :: Rational
+
+viewResult :: State -> [View Action]
 viewResult State {..} =
     [
         -- text (ms transformS),
-        svg_ [ viewHeightAttr, viewWidthAttr ] $
-          -- pure $ g_ [ transform_ (ms transformS)] $
+        svg_ 
+          [ viewHeightAttr, viewWidthAttr
+          , Svg.onMouseDown (SetDrag True) 
+          , Svg.onMouseUp (SetDrag False) 
+          , Svg.onMouseOut (SetDrag False)
+          ] $
             [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
             ++ (concat $ map renderEnclosure $ Map.toList _state_fn_encls)
             ++ concat xGuides ++ concat yGuides
@@ -370,8 +413,6 @@ viewResult State {..} =
     viewWidthAttr = Svg.width_ (ms (q2d w))
     PlotArea (Rectangle xL xR yL yR) _ _ _ = _state_plotArea
     -- [xLd, xRd, yLd, yRd] = map q2d [xL, xR, yL, yR]
-    w = 800 :: Rational
-    h = 800 :: Rational
     transformPt (x,y) = (transformX x, transformY y)
     transformX x = (x-xL)*w/(xR-xL)
     transformY y = h-(y-yL)*h/(yR-yL)

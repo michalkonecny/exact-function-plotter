@@ -32,10 +32,6 @@ import Miso hiding (at)
 import Miso.String (MisoString, ms, fromMisoString)
 import Miso.Svg as Svg
 
--- import GHCJS.Marshal
--- import JavaScript.Object
--- import JavaScript.Object.Internal
-
 import qualified Data.CDAR as CDAR
 -- import Data.CDAR (Dyadic)
 
@@ -69,8 +65,8 @@ state_fn_workers :: Lens' State (Map.Map String ThreadId)
 state_fn_workers wrap (State a b c d e) = fmap (\c' -> State a b c' d e) (wrap c)
 state_fn_encls :: Lens' State (Map.Map String PAEnclosure)
 state_fn_encls wrap (State a b c d e) = fmap (\d' -> State a b c d' e) (wrap d)
-state_fn_plotArea_Movement :: Lens' State PlotAreaMovement
-state_fn_plotArea_Movement wrap (State a b c d e) = fmap (\e' -> State a b c d e') (wrap e)
+state_plotArea_Movement :: Lens' State PlotAreaMovement
+state_plotArea_Movement wrap (State a b c d e) = fmap (\e' -> State a b c d e') (wrap e)
 
 data PlotArea = 
   PlotArea
@@ -154,8 +150,7 @@ main = do
   -- pure ()
   actionChan <- newChan
   plotAreaTV <- atomically $ newTVar initialPlotArea
-  dragTV <- atomically $ newTVar False
-  continueWithVars actionChan plotAreaTV dragTV
+  continueWithVars actionChan plotAreaTV
   where
   initialPlotArea = 
     PlotArea (Rectangle (-1) 1 (-1) 1) 
@@ -164,15 +159,15 @@ main = do
       initialMinXSegments
   initialPlotAreaMovement = 
     PlotAreaMovement False Nothing
-  continueWithVars actionChan plotAreaTV dragTV =
+  continueWithVars actionChan plotAreaTV =
     runJSaddle undefined $ startApp App {..}
     where
     initialAction = NoOp
     model  = State initialPlotArea Map.empty Map.empty Map.empty initialPlotAreaMovement
-    update = flip $ updateState actionChan plotAreaTV dragTV
+    update = flip $ updateState actionChan plotAreaTV
     view   = viewState
     events = defaultEvents
-    subs   = [actionSub actionChan, dragSub dragTV] 
+    subs   = [actionSub actionChan, dragSub] 
     mountPoint = Nothing -- mount point for application (Nothing defaults to 'body')
 
 initialTargetYSegments :: Int
@@ -191,24 +186,13 @@ actionSub actionChan sink = void . liftIO . forkIO $ keepPassingActions
     sink action
     keepPassingActions
 
-dragSub :: TVar Bool -> Sub Action
-dragSub _dragTV =
+dragSub :: Sub Action
+dragSub  =
   mouseSub MouseMove
-  -- do
-  -- windowAddEventListener "mousemove" mouseListener
-  -- where
-  -- mouseListener mouseEvent = do
-  --   isDrag <- liftIO $ atomically $ readTVar dragTV
-  --   if isDrag 
-  --     then do
-  --       Just x <- fromJSVal =<< getProp "clientX" (Object mouseEvent)
-  --       Just y <- fromJSVal =<< getProp "clientY" (Object mouseEvent)
-  --       liftIO (sink $ MouseMove (x,y))
-  --     else pure ()
 
 -- | Updates state, optionally introducing side effects
-updateState :: (Chan Action) -> (TVar PlotArea) -> (TVar Bool) -> State -> Action -> Effect Action State
-updateState actionChan plotAreaTV dragTV s action =
+updateState :: (Chan Action) -> (TVar PlotArea) -> State -> Action -> Effect Action State
+updateState actionChan plotAreaTV s action =
   case action of
     (NewPlotArea pa) ->
       ((s & state_plotArea .~ pa) <#) $ liftIO $ do
@@ -216,7 +200,7 @@ updateState actionChan plotAreaTV dragTV s action =
         pure NoOp
     (NewFunction (name, rf)) ->
       ((s & state_fn_exprs . at name .~ Just rf) <#) $ liftIO $ do
-        threadId <- forkIO $ enclWorker actionChan plotAreaTV dragTV name rf
+        threadId <- forkIO $ enclWorker actionChan plotAreaTV name rf
         pure $ NewWorker (name, threadId) 
     (NewWorker (name, tid)) ->
       ((s & state_fn_workers . at name .~ Just tid) <# ) $ liftIO $ do
@@ -224,22 +208,25 @@ updateState actionChan plotAreaTV dragTV s action =
     (NewEnclosure (name, encl)) ->
       noEff $ s & state_fn_encls . at name .~ Just encl
     SetDrag isDrag ->
-      (s' <#) $ liftIO $ do
-        atomically $ writeTVar dragTV isDrag
-        pure NoOp
+      if isDrag 
+        then noEff s'
+        else (s' <#) $ liftIO $ do
+          atomically $ writeTVar plotAreaTV pa
+          pure NoOp
       where
-      s' = s & state_fn_plotArea_Movement . plotAreaMovement_mouseDrag .~ isDrag
+      s' = s & state_plotArea_Movement . plotAreaMovement_mouseDrag .~ isDrag
+      pa = s ^. state_plotArea
     (MouseMove pos@(x,y)) ->
       noEff s2
       where
-      isDrag = s ^. state_fn_plotArea_Movement . plotAreaMovement_mouseDrag
+      isDrag = s ^. state_plotArea_Movement . plotAreaMovement_mouseDrag
       s1 = s 
-        & state_fn_plotArea_Movement . plotAreaMovement_mousePos .~ Just pos
+        & state_plotArea_Movement . plotAreaMovement_mousePos .~ Just pos
       s2 
         | isDrag = s1 & state_plotArea . plotArea_extents %~ moveExtents
         | otherwise = s1
       moveExtents extents@(Rectangle xL xR yL yR) =
-        case s ^. state_fn_plotArea_Movement . plotAreaMovement_mousePos of
+        case s ^. state_plotArea_Movement . plotAreaMovement_mousePos of
           Just (oldX, oldY) -> 
             let
               xd = (toRational $ x - oldX) *(xR-xL) / w
@@ -249,19 +236,18 @@ updateState actionChan plotAreaTV dragTV s action =
           _ -> extents
     NoOp -> noEff s
 
-enclWorker :: Chan Action -> TVar PlotArea -> TVar Bool -> String -> RF -> IO ()
-enclWorker actionChan plotAreaTV dragTV name rf =
+enclWorker :: Chan Action -> TVar PlotArea -> String -> RF -> IO ()
+enclWorker actionChan plotAreaTV name rf =
   waitForAreaAndAct Nothing
   where
   waitForAreaAndAct maybePrevThreadArea =
     do
     (maybePrevThreadId, plotArea) <- atomically $ do
       pa <- readTVar plotAreaTV
-      isDrag <- readTVar dragTV
       case maybePrevThreadArea of
         Nothing -> pure (Nothing, pa)
         Just (threadId, oldpa) ->
-          if isDrag || oldpa == pa then retry
+          if oldpa == pa then retry
           else pure (Just threadId, pa)
     case maybePrevThreadId of
       Nothing -> pure ()
@@ -391,8 +377,9 @@ viewState s@State{..} = div_ [] $
             [(yR,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_extents . rect_up .~ (d2q yR))
             _ -> NoOp
 
-w = 800 :: Rational
-h = 800 :: Rational
+h,w :: Rational
+w = 800
+h = 800
 
 viewResult :: State -> [View Action]
 viewResult State {..} =

@@ -25,6 +25,7 @@ import Language.Javascript.JSaddle (runJSaddle)
 import Data.List (intercalate)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
+import Data.Ratio ((%))
 
 -- | Miso framework import
 import qualified Miso
@@ -229,12 +230,15 @@ updateState actionChan plotAreaTV s action =
         case s ^. state_plotArea_Movement . plotAreaMovement_mousePos of
           Just (oldX, oldY) -> 
             let
-              xd = (toRational $ x - oldX) *(xR-xL) / w
-              yd = (toRational $ y - oldY) *(yR-yL) / h
+              xRes = (round $ xR-xL) % w
+              yRes = (round $ yR-yL) % h
+              xd = (toRational $ x - oldX) * xRes
+              yd = (toRational $ y - oldY) * yRes
             in
             Rectangle (xL - xd) (xR - xd) (yL + yd) (yR + yd)
           _ -> extents
     NoOp -> noEff s
+
 
 enclWorker :: Chan Action -> TVar PlotArea -> String -> RF -> IO ()
 enclWorker actionChan plotAreaTV name rf =
@@ -337,7 +341,8 @@ viewState s@State{..} = div_ [] $
     , br_ []
     ]
     ++ viewResult s
-    ++ [br_ [], text (ms $ show $ _state_plotArea_Movement)]
+    ++ [br_ [], text (ms $ show $ _state_plotArea)]
+    -- ++ [br_ [], text (ms $ show $ _state_plotArea_Movement)]
     -- ++ [br_ [], text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
     -- ++ [br_ [], text $ ms $ show $ product [1..10000]]
     where
@@ -377,9 +382,13 @@ viewState s@State{..} = div_ [] $
             [(yR,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_extents . rect_up .~ (d2q yR))
             _ -> NoOp
 
-h,w :: Rational
+h,w :: Integer
 w = 800
 h = 800
+
+hQ, wQ :: Rational
+hQ = toRational h
+wQ = toRational w
 
 viewResult :: State -> [View Action]
 viewResult State {..} =
@@ -397,21 +406,21 @@ viewResult State {..} =
             ++ concat xGuides ++ concat yGuides
     ]
     where
-    viewHeightAttr = Svg.height_ (ms (q2d h))
-    viewWidthAttr = Svg.width_ (ms (q2d w))
+    viewHeightAttr = Svg.height_ (ms (q2d hQ))
+    viewWidthAttr = Svg.width_ (ms (q2d wQ))
     PlotArea (Rectangle xL xR yL yR) _ _ _ = _state_plotArea
     -- [xLd, xRd, yLd, yRd] = map q2d [xL, xR, yL, yR]
     transformPt (x,y) = (transformX x, transformY y)
-    transformX x = (x-xL)*w/(xR-xL)
-    transformY y = h-(y-yL)*h/(yR-yL)
+    transformX x = (x-xL)*wQ/(xR-xL)
+    transformY y = hQ-(y-yL)*hQ/(yR-yL)
     xGuides = 
       [ let xiMS = ms (q2d $ transformX xi) in
         [line_ 
-         [x1_ xiMS, x2_ xiMS, y1_ "0", y2_ (ms (q2d h)), 
+         [x1_ xiMS, x2_ xiMS, y1_ "0", y2_ (ms (q2d hQ)), 
           stroke_ "black", strokeDasharray_ "1 3"
          ] []
          ,
-         text_ [x_ xiMS, y_ (ms (q2d h - 20))] [text (ms (q2d xi))]
+         text_ [x_ xiMS, y_ (ms (q2d hQ - 20))] [text (ms (q2d xi))]
         ]
       | xi <- xGuidePoints
       ]
@@ -422,11 +431,11 @@ viewResult State {..} =
     yGuides = 
       [ let yiMS = ms (q2d $ transformY yi) in
         [line_ 
-         [y1_ yiMS, y2_ yiMS, x1_ "0", x2_ (ms (q2d w)), 
+         [y1_ yiMS, y2_ yiMS, x1_ "0", x2_ (ms (q2d wQ)), 
           stroke_ "black", strokeDasharray_ "1 3"
          ] []
          ,
-         text_ [y_ yiMS, x_ (ms (q2d w - 30))] [text (ms (q2d yi))]
+         text_ [y_ yiMS, x_ (ms (q2d wQ - 30))] [text (ms (q2d yi))]
         ]
       | yi <- yGuidePoints
       ]

@@ -235,8 +235,8 @@ instance CanEvalRF Approx where
   sqrtRF = sqrtA
   expRF = expA
   logRF = logA
-  sinRF x = sinA (mBound x) x
-  cosRF x = cosA (mBound x) x
+  sinRF x = sinA x
+  cosRF x = cosA x
   tanRF x = sinRF x / cosRF x
 
 isIntegerRF_A :: Approx -> (Bool, Integer)

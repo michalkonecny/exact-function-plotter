@@ -272,45 +272,66 @@ enclWorker actionChan plotAreaTV name rf =
     enclosure = aseg xL xR
     aseg l r 
       | r - l > maxSegSize = asegDivision
-      | r - l < 2 * minSegSize = catMaybes [lrEnclosure]
-      | enclosureGood lrEnclosure = catMaybes [lrEnclosure]
+      | r - l < 2 * minSegSize = 
+          if tol1 <= yTolerance
+            then catMaybes [lrEnclosure1]
+            else catMaybes [lrEnclosureBest]
+      | tol1 <= yTolerance = 
+          catMaybes [lrEnclosure1]
       | otherwise = asegDivision
       where
       asegDivision = aseg l m ++ aseg m r
         where m = (l+r)/2
-      lrEnclosure = encloseSegment (l,r)
-      enclosureGood (Just (PAPoint xiL yiLL yiLR, PAPoint xiR yiRL yiRR)) =
-        (yiRW <= yTolerance || (yiW > 0) && (xiW*yiRW/yiW) <= yTolerance)
-        && 
-        (yiLW <= yTolerance || (yiW > 0) && (xiW*yiLW/yiW) <= yTolerance)
+      (lrEnclosure1, lrEnclosure0) = encloseSegment (l,r)
+      tol0 = enclosure0Tolerance lrEnclosure0
+      enclosure0Tolerance (Just (PAPoint _ yiL yiR, _)) = yiR - yiL
+      enclosure0Tolerance _ = yR - yL
+      tol1 = enclosure1Tolerance lrEnclosure1
+      enclosure1Tolerance (Just (PAPoint xiL yiLL yiLR, PAPoint xiR yiRL yiRR)) =
+        if (yiW > 0) 
+          then (min yiRW (xiW*yiRW/yiW)) `max` (min yiLW (xiW*yiLW/yiW))
+          else yiRW `max` yiLW
         where
         yiLW = yiLR - yiLL
         yiRW = yiRR - yiRL
         xiW = xiR - xiL
         yiW = min (abs $ yiRL - yiLL) (abs $ yiRR - yiLL)
-      enclosureGood _ = False
+      enclosure1Tolerance _ = yR - yL
+      lrEnclosureBest
+        | tol0 < tol1 = lrEnclosure0
+        | otherwise = lrEnclosure1
     encloseSegment (xiL, xiR) =
-      let
-        xiM = (xiL + xiR)/2
-        yiM_A = evalRF (yPrec) rf (CDAR.toApprox (xPrec) xiM) 
-        xi_A = (CDAR.toApprox (xPrec) xiL) `CDAR.unionA` (CDAR.toApprox xPrec xiR)
-        (D (_yi_A : yid_A : _)) = evalRF (yPrec) rf (xD xPrec xi_A)
-      in
-      case (CDAR.lowerBound yiM_A, CDAR.upperBound yiM_A, CDAR.lowerBound yid_A, CDAR.upperBound yid_A) of
-        (CDAR.Finite yiML_D, CDAR.Finite  yiMR_D, CDAR.Finite  yidL_D, CDAR.Finite  yidR_D) ->
-          let
-            yiML = toRational yiML_D 
-            yiMR = toRational yiMR_D 
-            yidL = toRational yidL_D 
-            yidR = toRational yidR_D
-            rad = (xiR - xiL)/2
-            yiLL = yiML - rad*yidR
-            yiLR = yiMR - rad*yidL
-            yiRL = yiML + rad*yidL
-            yiRR = yiMR + rad*yidR
-          in
-          Just (PAPoint xiL yiLL yiLR, PAPoint xiR yiRL yiRR)
-        _ -> Nothing
+      (enclosure1, enclosure0)
+      where
+      xiM = (xiL + xiR)/2
+      yiM_A = evalRF (yPrec) rf (CDAR.toApprox (xPrec) xiM) 
+      xi_A = (CDAR.toApprox (xPrec) xiL) `CDAR.unionA` (CDAR.toApprox xPrec xiR)
+      (D (yi_A : yid_A : _)) = evalRF (yPrec) rf (xD xPrec xi_A)
+      enclosure1 =
+        case (CDAR.lowerBound yiM_A, CDAR.upperBound yiM_A, CDAR.lowerBound yid_A, CDAR.upperBound yid_A) of
+          (CDAR.Finite yiML_D, CDAR.Finite  yiMR_D, CDAR.Finite  yidL_D, CDAR.Finite  yidR_D) ->
+            let
+              yiML = toRational yiML_D 
+              yiMR = toRational yiMR_D 
+              yidL = toRational yidL_D 
+              yidR = toRational yidR_D
+              rad = (xiR - xiL)/2
+              yiLL = yiML - rad*yidR
+              yiLR = yiMR - rad*yidL
+              yiRL = yiML + rad*yidL
+              yiRR = yiMR + rad*yidR
+            in
+            Just (PAPoint xiL yiLL yiLR, PAPoint xiR yiRL yiRR)
+          _ -> Nothing
+      enclosure0 =
+        case (CDAR.lowerBound yi_A, CDAR.upperBound yi_A) of
+          (CDAR.Finite yiL_D, CDAR.Finite yiR_D) ->
+            let
+              yiL = toRational yiL_D 
+              yiR = toRational yiR_D 
+            in
+            Just (PAPoint xiL yiL yiR, PAPoint xiR yiL yiR)
+          _ -> Nothing
     xPrec, yPrec :: CDAR.Precision
     xPrec = 10 + (round $ negate $ logBase 2 (q2d minSegSize))
     yPrec = 10 + (round $ negate $ logBase 2 (q2d yTolerance))
@@ -341,7 +362,7 @@ viewState s@State{..} = div_ [] $
     , br_ []
     ]
     ++ viewResult s
-    ++ [br_ [], text (ms $ show $ _state_plotArea)]
+    -- ++ [br_ [], text (ms $ show $ _state_plotArea)]
     -- ++ [br_ [], text (ms $ show $ _state_plotArea_Movement)]
     -- ++ [br_ [], text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
     -- ++ [br_ [], text $ ms $ show $ product [1..10000]]

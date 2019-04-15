@@ -106,6 +106,21 @@ rect_down wrap (Rectangle a b c d) = fmap (\c' -> Rectangle a b c' d) (wrap c)
 rect_up :: Lens' (Rectangle a) a
 rect_up wrap (Rectangle a b c d) = fmap (\d' -> Rectangle a b c d') (wrap d)
 
+plotArea_isPanned :: PlotArea -> PlotArea -> Bool
+plotArea_isPanned 
+  (PlotArea e1 tY1 maxX1 minX1) 
+  (PlotArea e2 tY2 maxX2 minX2) =
+  tY1 == tY2 && maxX1 == maxX2 && minX1 == minX2
+  &&
+  rect_isPanned e1 e2  
+
+rect_isPanned :: (Eq a, Num a) => Rectangle a -> Rectangle a -> Bool
+rect_isPanned
+  (Rectangle l1 r1 d1 u1)
+  (Rectangle l2 r2 d2 u2) 
+  =
+  r1 - l1 == r2 - l2 && u1 - d1 == u2 - d2
+
 data PlotAreaMovement =
   PlotAreaMovement
   {
@@ -140,7 +155,7 @@ data Action
   | NewPlotArea !PlotArea
   | NewFunction !(String, RF)
   | NewWorker !(String, ThreadId)
-  | NewEnclosure !(String, PAEnclosure)
+  | NewEnclosureSegments !(String, Bool, PAEnclosure)
   | SetDrag Bool
   | MouseMove (Int,Int)
   deriving (Show, Eq)
@@ -154,7 +169,7 @@ main = do
   continueWithVars actionChan plotAreaTV
   where
   initialPlotArea = 
-    PlotArea (Rectangle (-1) 1 (-1) 1) 
+    PlotArea (Rectangle (-1) 1 (-1) 1)
       initialTargetYSegments
       initialMaxXSegments
       initialMinXSegments
@@ -200,14 +215,32 @@ updateState actionChan plotAreaTV s action =
         atomically $ writeTVar plotAreaTV pa
         pure NoOp
     (NewFunction (name, rf)) ->
-      ((s & state_fn_exprs . at name .~ Just rf) <#) $ liftIO $ do
+      (s' <#) $ liftIO $ do
+        case s ^. state_fn_workers . at name of
+          Just otid -> killThread otid -- stop previous worker thread
+          _ -> pure ()
+        -- start new worker thread:
         threadId <- forkIO $ enclWorker actionChan plotAreaTV name rf
+        -- register the worker thread:
         pure $ NewWorker (name, threadId) 
+      where
+      s' =
+        s & state_fn_exprs . at name .~ Just rf 
+          & state_fn_workers . at name .~ Nothing
+          & state_fn_encls . at name .~ Nothing
     (NewWorker (name, tid)) ->
-      ((s & state_fn_workers . at name .~ Just tid) <# ) $ liftIO $ do
+      (s' <# ) $ liftIO $ do
         pure NoOp
-    (NewEnclosure (name, encl)) ->
-      noEff $ s & state_fn_encls . at name .~ Just encl
+      where
+      s' = 
+        s & state_fn_workers . at name .~ Just tid
+    (NewEnclosureSegments (name, shouldAppend, encl)) ->
+      noEff $ 
+        s & state_fn_encls . at name %~ addEncl
+      where
+      addEncl (Just oldEncl) 
+        | shouldAppend = Just $ oldEncl ++ encl
+      addEncl _ = Just encl
     SetDrag isDrag ->
       if isDrag 
         then noEff s'
@@ -242,26 +275,62 @@ updateState actionChan plotAreaTV s action =
 
 enclWorker :: Chan Action -> TVar PlotArea -> String -> RF -> IO ()
 enclWorker actionChan plotAreaTV name rf =
-  waitForAreaAndAct Nothing
+  waitForAreaAndAct [] Nothing
   where
-  waitForAreaAndAct maybePrevThreadArea =
+  waitForAreaAndAct threadIds maybePrevCompInfo =
     do
-    (maybePrevThreadId, plotArea) <- atomically $ do
+    -- wait until there is a change in the plotArea, 
+    -- then work out whether the change requires reset or append:
+    (plotArea, isPanned) <- atomically $ do
       pa <- readTVar plotAreaTV
-      case maybePrevThreadArea of
-        Nothing -> pure (Nothing, pa)
-        Just (threadId, oldpa) ->
+      case maybePrevCompInfo of
+        Nothing -> pure (pa, False)
+        Just (_, oldpa) ->
           if oldpa == pa then retry
-          else pure (Just threadId, pa)
-    case maybePrevThreadId of
-      Nothing -> pure ()
-      Just tid -> killThread tid
-    threadId <- forkIO $ sendNewEnclosure plotArea
-    waitForAreaAndAct $ Just (threadId, plotArea)
-  sendNewEnclosure plotArea =
-    do
-    writeChan actionChan (NewEnclosure (name, enclosure))
+          else 
+            pure (pa, plotArea_isPanned oldpa pa)
+    -- if resetting, kill any potentially active threads:
+    case isPanned of
+      False -> mapM_ killThread threadIds
+      _ -> pure ()
+    -- work over which interval to compute, if at all:
+    (mxC, x) <-
+      case maybePrevCompInfo of
+        Just (oxC, _) | isPanned ->
+          pure (get_xC_x oxC plotArea)
+        _ -> 
+          pure (Just xP, xP)
+            where
+            xP = plotArea_x plotArea
+    -- start a new enclosure computation thread (if needed) and recurse:
+    case mxC of
+      Just xC ->
+        do
+        threadId <- forkIO $ sendNewEnclosureSegments isPanned plotArea xC
+        case isPanned of
+          True -> waitForAreaAndAct (threadId : threadIds) (Just (x, plotArea))
+          _    -> waitForAreaAndAct [threadId] (Just (x, plotArea))
+      _ -> 
+        waitForAreaAndAct threadIds maybePrevCompInfo -- ie do nothing this time
     where
+    get_xC_x (oxCL, oxCR) plotArea
+      | xL < oxCL && oxCL <= xR && xR <= oxCR = (Just (xL, oxCL), (xL, oxCR))
+          -- ie a part on the left needs computing
+      | oxCL <= xL && xL <= oxCR && oxCR < xR = (Just (oxCR, xR), (oxCL, xR))
+          -- ie a part on the right needs computing
+      | oxCL <= xL && xR <= oxCR = (Nothing, (oxCL, oxCR))
+      | otherwise = (Just (xL, xR), (xL, xR))
+      where
+      (Rectangle xL xR _ _) = plotArea ^. plotArea_extents
+    plotArea_x pa = (xL, xR)
+      where
+      (Rectangle xL xR _ _) = pa ^. plotArea_extents
+
+  sendNewEnclosureSegments isPanned plotArea (xCL, xCR) =
+    writeChan actionChan 
+      (NewEnclosureSegments (name, shouldAppend, enclosure))
+    where
+    shouldAppend = isPanned
     PlotArea (Rectangle xL xR yL yR) yN xMaxN xMinN = plotArea
     yNQ = (toRational yN) :: Rational
     xMinNQ = (toRational xMinN) :: Rational
@@ -269,7 +338,7 @@ enclWorker actionChan plotAreaTV name rf =
     maxSegSize = (xR - xL)/xMinNQ
     minSegSize = (xR - xL)/xMaxNQ
     yTolerance = (yR - yL)/yNQ
-    enclosure = aseg xL xR
+    enclosure = aseg xCL xCR
     aseg l r 
       | r - l > maxSegSize = asegDivision
       | r - l < 2 * minSegSize = 

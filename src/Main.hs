@@ -332,16 +332,22 @@ enclWorker actionChan plotAreaTV name rf =
     where
     shouldAppend = isPanned
     PlotArea (Rectangle xL xR yL yR) yN xMaxN xMinN = plotArea
-    yNQ = (toRational yN) :: Rational
-    xMinNQ = (toRational xMinN) :: Rational
-    xMaxNQ = (toRational xMaxN) :: Rational
-    maxSegSize = (xR - xL)/xMinNQ
-    minSegSize = (xR - xL)/xMaxNQ
-    yTolerance = (yR - yL)/yNQ
+    xLd = q2d xL
+    xRd = q2d xR
+    xWd = xRd - xLd
+    yLd = q2d yL
+    yRd = q2d yR
+    yWd = yRd - yLd
+    yNd = (fromIntegral yN) :: Double
+    xMinNd = (fromIntegral xMinN) :: Double
+    xMaxNd = (fromIntegral xMaxN) :: Double
+    maxSegSize = xWd/xMinNd
+    minSegSize = xWd/xMaxNd
+    yTolerance = yWd/yNd
     enclosure = aseg xCL xCR
     aseg l r 
-      | r - l > maxSegSize = asegDivision
-      | r - l < 2 * minSegSize = 
+      | rd - ld > maxSegSize = asegDivision
+      | rd - ld < 2 * minSegSize = 
           catMaybes [lrEnclosureBest]
       | tol0 <= yTolerance = 
           catMaybes [lrEnclosure0]
@@ -349,31 +355,27 @@ enclWorker actionChan plotAreaTV name rf =
           catMaybes [lrEnclosure1]
       | otherwise = asegDivision
       where
+      ld = q2d l
+      rd = q2d r
       asegDivision = aseg l m ++ aseg m r
         where m = (l+r)/2
       (lrEnclosure1, lrEnclosure0) = encloseSegment (l,r)
       tol0 = enclosure0Tolerance lrEnclosure0
-      enclosure0Tolerance (Just (PAPoint _ yiL yiR, _)) = yiR - yiL
-      enclosure0Tolerance _ = yR - yL
+      enclosure0Tolerance (Just (PAPoint _ yiL yiR, _)) = (q2d yiR) - (q2d yiL)
+      enclosure0Tolerance _ = yWd
       tol1 = enclosure1Tolerance lrEnclosure1
       tol1Vert = enclosure1VertTolerance lrEnclosure1
       enclosure1Tolerance (Just (PAPoint xiL yiLL _yiLR, PAPoint xiR yiRL yiRR)) =
-        if (yiW > 0) 
-          then (min yiRW (xiW*yiRW/yiW)) -- `max` (min yiLW (xiW*yiLW/yiW)) -- not needed thanks to centre-point symmetry
-          else yiRW -- `max` yiLW
+        xiW * yiW / (sqrt $ xiW^(2::Int) + yiD^(2::Int))
         where
-        -- yiLW = yiLR - yiLL
-        yiRW = yiRR - yiRL
-        xiW = xiR - xiL
-        yiW = abs $ yiRL - yiLL
+        yiW = (q2d yiRR) - (q2d yiRL)
+        xiW = (q2d xiR) - (q2d xiL)
+        yiD = abs $ (q2d yiRL) - (q2d yiLL)
         -- yiW = min (abs $ yiRL - yiLL) (abs $ yiRR - yiLR)
-      enclosure1Tolerance _ = yR - yL
-      enclosure1VertTolerance (Just (PAPoint _ yiLL yiLR, PAPoint _ yiRL yiRR)) =
-        yiRW `max` yiLW
-        where
-        yiLW = yiLR - yiLL
-        yiRW = yiRR - yiRL
-      enclosure1VertTolerance _ = yR - yL
+      enclosure1Tolerance _ = yWd
+      enclosure1VertTolerance (Just (PAPoint _ _yiLL _yiLR, PAPoint _ yiRL yiRR)) =
+        (q2d yiRR) - (q2d yiRL)
+      enclosure1VertTolerance _ = yWd
       lrEnclosureBest
         | tol0 < max tol1 tol1Vert = lrEnclosure0
         | otherwise = lrEnclosure1
@@ -410,8 +412,8 @@ enclWorker actionChan plotAreaTV name rf =
             Just (PAPoint xiL yiL yiR, PAPoint xiR yiL yiR)
           _ -> Nothing
     xPrec, yPrec :: CDAR.Precision
-    xPrec = 10 + (round $ negate $ logBase 2 (q2d minSegSize))
-    yPrec = 10 + (round $ negate $ logBase 2 (q2d yTolerance))
+    xPrec = 10 + (round $ negate $ logBase 2 (minSegSize))
+    yPrec = 10 + (round $ negate $ logBase 2 (yTolerance))
 
 -- | Constructs a virtual DOM from a state
 viewState :: State -> View Action

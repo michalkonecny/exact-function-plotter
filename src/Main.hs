@@ -348,7 +348,8 @@ enclWorker actionChan plotAreaTV name rf =
     aseg l r 
       | rd - ld > maxSegSize = asegDivision
       | rd - ld < 2 * minSegSize = 
-          catMaybes [lrEnclosureBest]
+          catMaybes [lrEnclosure0]
+          -- catMaybes [lrEnclosureBest]
       | tol0 <= yTolerance = 
           catMaybes [lrEnclosure0]
       | tol1 <= yTolerance = 
@@ -364,7 +365,7 @@ enclWorker actionChan plotAreaTV name rf =
       enclosure0Tolerance (Just (_, PAPoint _ yiL yiR)) = (q2d yiR) - (q2d yiL)
       enclosure0Tolerance _ = yWd
       tol1 = enclosure1Tolerance lrEnclosure1
-      tol1Vert = enclosure1VertTolerance lrEnclosure1
+      -- tol1Vert = enclosure1VertTolerance lrEnclosure1
       enclosure1Tolerance (Just (PAPoint xiL yiLL _yiLR, PAPoint xiR yiRL yiRR)) =
         xiW * yiW / (sqrt $ xiW^(2::Int) + yiD^(2::Int))
         where
@@ -376,12 +377,12 @@ enclWorker actionChan plotAreaTV name rf =
         D (_ : yiRDd : _) = evalRF () rf (xD () rd)
         -- yiW = min (abs $ yiRL - yiLL) (abs $ yiRR - yiLR)
       enclosure1Tolerance _ = yWd
-      enclosure1VertTolerance (Just (PAPoint _ _yiLL _yiLR, PAPoint _ yiRL yiRR)) =
-        (q2d yiRR) - (q2d yiRL)
-      enclosure1VertTolerance _ = yWd
-      lrEnclosureBest
-        | tol0 < max tol1 tol1Vert = lrEnclosure0
-        | otherwise = lrEnclosure1
+      -- enclosure1VertTolerance (Just (PAPoint _ _yiLL _yiLR, PAPoint _ yiRL yiRR)) =
+      --   (q2d yiRR) - (q2d yiRL)
+      -- enclosure1VertTolerance _ = yWd
+      -- lrEnclosureBest
+      --   | tol0 < max tol1 tol1Vert = lrEnclosure0
+      --   | otherwise = lrEnclosure1
     encloseSegment (xiL, xiR) =
       (enclosure1, enclosure0)
       where

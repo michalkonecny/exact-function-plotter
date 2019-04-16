@@ -370,7 +370,10 @@ enclWorker actionChan plotAreaTV name rf =
         where
         yiW = (q2d yiRR) - (q2d yiRL)
         xiW = (q2d xiR) - (q2d xiL)
-        yiD = abs $ (q2d yiRL) - (q2d yiLL)
+        yiD = (abs yiDavg) `min` (((abs yiLDd) `min` (abs yiRDd)) * xiW)
+        yiDavg = (q2d yiRL) - (q2d yiLL)
+        D (_ : yiLDd : _) = evalRF () rf (xD () ld)
+        D (_ : yiRDd : _) = evalRF () rf (xD () rd)
         -- yiW = min (abs $ yiRL - yiLL) (abs $ yiRR - yiLR)
       enclosure1Tolerance _ = yWd
       enclosure1VertTolerance (Just (PAPoint _ _yiLL _yiLR, PAPoint _ yiRL yiRR)) =

@@ -357,15 +357,16 @@ enclWorker actionChan plotAreaTV name rf =
       enclosure0Tolerance _ = yR - yL
       tol1 = enclosure1Tolerance lrEnclosure1
       tol1Vert = enclosure1VertTolerance lrEnclosure1
-      enclosure1Tolerance (Just (PAPoint xiL yiLL yiLR, PAPoint xiR yiRL yiRR)) =
+      enclosure1Tolerance (Just (PAPoint xiL yiLL _yiLR, PAPoint xiR yiRL yiRR)) =
         if (yiW > 0) 
-          then (min yiRW (xiW*yiRW/yiW)) `max` (min yiLW (xiW*yiLW/yiW))
-          else yiRW `max` yiLW
+          then (min yiRW (xiW*yiRW/yiW)) -- `max` (min yiLW (xiW*yiLW/yiW)) -- not needed thanks to centre-point symmetry
+          else yiRW -- `max` yiLW
         where
-        yiLW = yiLR - yiLL
+        -- yiLW = yiLR - yiLL
         yiRW = yiRR - yiRL
         xiW = xiR - xiL
-        yiW = min (abs $ yiRL - yiLL) (abs $ yiRR - yiLL)
+        yiW = abs $ yiRL - yiLL
+        -- yiW = min (abs $ yiRL - yiLL) (abs $ yiRR - yiLR)
       enclosure1Tolerance _ = yR - yL
       enclosure1VertTolerance (Just (PAPoint _ yiLL yiLR, PAPoint _ yiRL yiRR)) =
         yiRW `max` yiLW

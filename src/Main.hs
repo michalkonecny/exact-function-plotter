@@ -367,22 +367,18 @@ enclWorker actionChan plotAreaTV name rf =
       tol1 = enclosure1Tolerance lrEnclosure1
       -- tol1Vert = enclosure1VertTolerance lrEnclosure1
       enclosure1Tolerance (Just (PAPoint xiL yiLL _yiLR, PAPoint xiR yiRL yiRR)) =
-        xiW * yiW / (sqrt $ xiW^(2::Int) + yiD^(2::Int))
+        xiW * yiW / (sqrt $ xiW^(2::Int) + yiD2^(2::Int))
         where
         yiW = (q2d yiRR) - (q2d yiRL)
         xiW = (q2d xiR) - (q2d xiL)
-        yiD = (abs yiDavg) `min` (((abs yiLDd) `min` (abs yiRDd)) * xiW)
+        yiD2 = yiD/2
+        yiD
+          | yiDavg >= 0 = yiDavg `min` (((max 0 yiLDd) `min` (max 0 yiRDd)) * xiW)
+          | otherwise = (-yiDavg) `min` (((max 0 (-yiLDd)) `min` (max 0 (-yiRDd))) * xiW)
         yiDavg = (q2d yiRL) - (q2d yiLL)
         D (_ : yiLDd : _) = evalRF () rf (xD () ld)
         D (_ : yiRDd : _) = evalRF () rf (xD () rd)
-        -- yiW = min (abs $ yiRL - yiLL) (abs $ yiRR - yiLR)
       enclosure1Tolerance _ = yWd
-      -- enclosure1VertTolerance (Just (PAPoint _ _yiLL _yiLR, PAPoint _ yiRL yiRR)) =
-      --   (q2d yiRR) - (q2d yiRL)
-      -- enclosure1VertTolerance _ = yWd
-      -- lrEnclosureBest
-      --   | tol0 < max tol1 tol1Vert = lrEnclosure0
-      --   | otherwise = lrEnclosure1
     encloseSegment (xiL, xiR) =
       (enclosure1, enclosure0)
       where

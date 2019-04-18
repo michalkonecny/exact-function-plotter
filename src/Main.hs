@@ -159,7 +159,7 @@ data Action
   | NewWorker !(String, ThreadId)
   | NewEnclosureSegments !(String, Bool, PAEnclosure)
   | SetDrag Bool
-  | MouseMove (Int,Int)
+  | Pan (Int,Int)
   | Zoom Int
   deriving (Show, Eq)
 
@@ -186,7 +186,7 @@ main = do
     update = flip $ updateState actionChan plotAreaTV
     view   = viewState
     events = defaultEvents
-    subs   = [actionSub actionChan, dragSub] 
+    subs   = [actionSub actionChan] 
     mountPoint = Nothing -- mount point for application (Nothing defaults to 'body')
 
 initialTargetYSegments :: Int
@@ -204,10 +204,6 @@ actionSub actionChan sink = void . liftIO . forkIO $ keepPassingActions
     action <- readChan actionChan
     sink action
     keepPassingActions
-
-dragSub :: Sub Action
-dragSub  =
-  mouseSub MouseMove
 
 -- | Updates state, optionally introducing side effects
 updateState :: (Chan Action) -> (TVar PlotArea) -> State -> Action -> Effect Action State
@@ -253,7 +249,7 @@ updateState actionChan plotAreaTV s action =
       where
       s' = s & state_plotArea_Movement . plotAreaMovement_mouseDrag .~ isDrag
       pa = s ^. state_plotArea
-    (MouseMove pos@(x,y)) ->
+    (Pan pos@(x,y)) ->
       noEff s2
       where
       isDrag = s ^. state_plotArea_Movement . plotAreaMovement_mouseDrag
@@ -276,9 +272,11 @@ updateState actionChan plotAreaTV s action =
     Zoom i ->
       (s' <# ) $ liftIO $ do
         putStrLn $ "Zoom " ++ (show i)
+        atomically $ writeTVar plotAreaTV pa
         pure NoOp
       where
       s' = s & state_plotArea . plotArea_extents %~ zoomi
+      pa = s' ^. state_plotArea
       zoomi (Rectangle xL xR yL yR) = 
         Rectangle (xM - xri) (xM + xri) (yM - yri) (yM + yri)
         where
@@ -466,7 +464,7 @@ viewState s@State{..} = div_ [] $
     ]
     ++ viewResult s
     -- ++ [br_ [], text (ms $ show $ _state_plotArea)]
-    -- ++ [br_ [], text (ms $ show $ _state_plotArea_Movement)]
+    ++ [br_ [], text (ms $ show $ _state_plotArea_Movement)]
     -- ++ [br_ [], text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
     -- ++ [br_ [], text $ ms $ show $ product [1..10000]]
     where
@@ -518,31 +516,43 @@ viewResult :: State -> [View Action]
 viewResult State {..} =
     [
         -- text (ms transformS),
-        svg_ 
-          [ viewHeightAttr, viewWidthAttr
-          , Miso.style_ (Map.singleton "user-select" "none")
-          , Miso.onMouseDown (SetDrag True) 
-          , Miso.onMouseUp (SetDrag False) 
-          , Miso.onMouseOut (SetDrag False)
-          , zoomHandler
-          ] $
-            [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
-            ++ (concat $ map renderEnclosure $ Map.toList _state_fn_encls)
-            ++ concat xGuides ++ concat yGuides
+        div_ 
+          [
+            Miso.style_ (Map.singleton "user-select" "none")
+          , Miso.on "mousedown" emptyDecoder (const $ SetDrag True)
+          , Miso.on "mousemove" xyPanDecoder id
+          , Miso.on "mouseup" emptyDecoder (const $ SetDrag False)
+          , Miso.on "mouseout" emptyDecoder (const $ SetDrag False)
+          , Miso.on "wheel" deltaYZoomDecoder id
+          ]
+          [
+            svg_ 
+              [ viewHeightAttr, viewWidthAttr
+              ] $
+                [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
+                ++ (concat $ map renderEnclosure $ Map.toList _state_fn_encls)
+                ++ concat xGuides ++ concat yGuides
+          ]
     ]
     where
-    zoomHandler =
-      Miso.on "wheel" wheelDecoder id
+    xyPanDecoder :: Decoder Action
+    xyPanDecoder = Decoder {..}
       where
-      wheelDecoder :: Decoder Action
-      wheelDecoder = Decoder {..}
-        where
-          decodeAt = DecodeTarget mempty
-          decoder = withObject "event" $ \o -> ms2action <$> (o .: "deltaY")
-          ms2action s =
-            case reads (fromMisoString s) of
-              [(i,"")] -> Zoom (round (i :: Double))
-              _ -> NoOp
+        decodeAt = DecodeTarget mempty
+        decoder = withObject "event" $ \o -> ms2action <$> (o .: "clientX") <*> (o .: "clientY")
+        ms2action sX sY =
+          case (reads (fromMisoString sX), reads (fromMisoString sY)) of
+            ([(x,"")], [(y,"")]) -> Pan (x,y)
+            _ -> NoOp
+    deltaYZoomDecoder :: Decoder Action
+    deltaYZoomDecoder = Decoder {..}
+      where
+        decodeAt = DecodeTarget mempty
+        decoder = withObject "event" $ \o -> ms2action <$> (o .: "deltaY")
+        ms2action s =
+          case reads (fromMisoString s) of
+            [(i,"")] -> Zoom (round (i :: Double))
+            _ -> NoOp
 
     viewHeightAttr = Svg.height_ (ms (q2d hQ))
     viewWidthAttr = Svg.width_ (ms (q2d wQ))

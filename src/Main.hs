@@ -25,7 +25,7 @@ import Language.Javascript.JSaddle (runJSaddle)
 import Data.List (intercalate)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
-import Data.Ratio ((%))
+-- import Data.Ratio ((%))
 
 -- | Miso framework import
 import qualified Miso
@@ -33,7 +33,7 @@ import Miso hiding (at)
 import Miso.String (MisoString, ms, fromMisoString)
 -- import Miso.Event.Types
 import Miso.Svg as Svg
-import Data.Aeson.Types
+-- import Data.Aeson.Types
 
 import qualified Data.CDAR as CDAR
 -- import Data.CDAR (Dyadic)
@@ -467,17 +467,17 @@ viewState s@State{..} =
     , button_ [ onClick (zoomi (-1)) ] [ text "-"]
     , button_ [ onClick (zoomi 1) ] [text "+"]
     , text "Move "
-    , button_ [ onClick (pani ((-1),0)) ] [ text "←"]
-    , button_ [ onClick (pani (1,0)) ] [ text "→"]
-    , button_ [ onClick (pani (0,1)) ] [ text "↑"]
-    , button_ [ onClick (pani (0,(-1))) ] [ text "↓"]
+    , button_ [ onClick (pani (1,0)) ] [ text "←"]
+    , button_ [ onClick (pani (-1,0)) ] [ text "→"]
+    , button_ [ onClick (pani (0,-1)) ] [ text "↑"]
+    , button_ [ onClick (pani (0,1)) ] [ text "↓"]
     , br_ []
     , text (case _state_err of Nothing -> ""; Just msg -> (ms $ "Error: " ++ msg)) 
     , br_ []
     ]
     ++ viewResult s
     -- ++ [br_ [], text (ms $ show $ _state_plotArea)]
-    ++ [br_ [], text (ms $ show $ _state_plotArea_Movement)]
+    -- ++ [br_ [], text (ms $ show $ _state_plotArea_Movement)]
     -- ++ [br_ [], text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
     -- ++ [br_ [], text $ ms $ show $ product [1..10000]]
     where
@@ -537,6 +537,7 @@ viewResult State {..} =
         -- text (ms transformS),
         div_ 
           [
+            Miso.style_ (Map.singleton "font-size" "12pt")
           --   Miso.style_ (Map.singleton "user-select" "none")
           -- , Miso.on "mousedown" emptyDecoder (const $ SetDrag True)
           -- -- , onNoDef "mousemove" xyPanDecoder id

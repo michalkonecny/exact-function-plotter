@@ -31,7 +31,9 @@ import Data.Ratio ((%))
 import qualified Miso
 import Miso hiding (at)
 import Miso.String (MisoString, ms, fromMisoString)
+-- import Miso.Event.Types
 import Miso.Svg as Svg
+import Data.Aeson.Types
 
 import qualified Data.CDAR as CDAR
 -- import Data.CDAR (Dyadic)
@@ -158,6 +160,7 @@ data Action
   | NewEnclosureSegments !(String, Bool, PAEnclosure)
   | SetDrag Bool
   | MouseMove (Int,Int)
+  | Zoom Int
   deriving (Show, Eq)
 
 -- | Entry point for a miso application
@@ -270,6 +273,23 @@ updateState actionChan plotAreaTV s action =
             in
             Rectangle (xL - xd) (xR - xd) (yL + yd) (yR + yd)
           _ -> extents
+    Zoom i ->
+      (s' <# ) $ liftIO $ do
+        putStrLn $ "Zoom " ++ (show i)
+        pure NoOp
+      where
+      s' = s & state_plotArea . plotArea_extents %~ zoomi
+      zoomi (Rectangle xL xR yL yR) = 
+        Rectangle (xM - xri) (xM + xri) (yM - yri) (yM + yri)
+        where
+        xM = (xL + xR)/2
+        yM = (yL + yR)/2
+        stepRatio = 120/100
+        xr = (xR - xL)/2
+        yr = (yR - yL)/2
+        iRatio = stepRatio ^^ (-i)
+        xri = xr * iRatio
+        yri = yr * iRatio
     NoOp -> noEff s
 
 
@@ -439,6 +459,10 @@ viewState s@State{..} = div_ [] $
     , text " <= y <= " 
     , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_up _plotArea_extents)), onChange act_on_yR ]
     , br_ []
+    , text "Zoom "
+    , button_ [ onClick (Zoom (-1)) ] [text "-"]
+    , button_ [ onClick (Zoom 1) ] [text "+"]
+    , br_ []
     ]
     ++ viewResult s
     -- ++ [br_ [], text (ms $ show $ _state_plotArea)]
@@ -497,15 +521,29 @@ viewResult State {..} =
         svg_ 
           [ viewHeightAttr, viewWidthAttr
           , Miso.style_ (Map.singleton "user-select" "none")
-          , Svg.onMouseDown (SetDrag True) 
-          , Svg.onMouseUp (SetDrag False) 
-          , Svg.onMouseOut (SetDrag False)
+          , Miso.onMouseDown (SetDrag True) 
+          , Miso.onMouseUp (SetDrag False) 
+          , Miso.onMouseOut (SetDrag False)
+          , zoomHandler
           ] $
             [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
             ++ (concat $ map renderEnclosure $ Map.toList _state_fn_encls)
             ++ concat xGuides ++ concat yGuides
     ]
     where
+    zoomHandler =
+      Miso.on "wheel" wheelDecoder id
+      where
+      wheelDecoder :: Decoder Action
+      wheelDecoder = Decoder {..}
+        where
+          decodeAt = DecodeTarget mempty
+          decoder = withObject "event" $ \o -> ms2action <$> (o .: "deltaY")
+          ms2action s =
+            case reads (fromMisoString s) of
+              [(i,"")] -> Zoom (round (i :: Double))
+              _ -> NoOp
+
     viewHeightAttr = Svg.height_ (ms (q2d hQ))
     viewWidthAttr = Svg.width_ (ms (q2d wQ))
     PlotArea (Rectangle xL xR yL yR) _ _ _ = _state_plotArea

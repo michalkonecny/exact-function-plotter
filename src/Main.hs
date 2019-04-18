@@ -123,8 +123,11 @@ rect_zoom ratio (Rectangle xL xR yL yR) =
   yri = yr * ratio
 
 rect_move :: (Fractional a) => (a,a) -> Rectangle a -> Rectangle a
-rect_move (xd,yd) (Rectangle xL xR yL yR) = 
+rect_move (xp,yp) (Rectangle xL xR yL yR) = 
   Rectangle (xL + xd) (xR + xd) (yL + yd) (yR + yd)
+  where
+  xd = xp * (xR-xL)
+  yd = yp * (yR-yL)
 
 plotArea_isPanned :: PlotArea -> PlotArea -> Bool
 plotArea_isPanned 
@@ -463,6 +466,11 @@ viewState s@State{..} =
     , text "Zoom "
     , button_ [ onClick (zoomi (-1)) ] [ text "-"]
     , button_ [ onClick (zoomi 1) ] [text "+"]
+    , text "Move "
+    , button_ [ onClick (pani ((-1),0)) ] [ text "←"]
+    , button_ [ onClick (pani (1,0)) ] [ text "→"]
+    , button_ [ onClick (pani (0,1)) ] [ text "↑"]
+    , button_ [ onClick (pani (0,(-1))) ] [ text "↓"]
     , br_ []
     , text (case _state_err of Nothing -> ""; Just msg -> (ms $ "Error: " ++ msg)) 
     , br_ []
@@ -476,6 +484,9 @@ viewState s@State{..} =
     zoomi :: Int -> Action
     zoomi i =
       NewPlotArea $ _state_plotArea & plotArea_extents %~ rect_zoom ((110/100)^^(-i))
+    pani :: (Rational, Rational) -> Action
+    pani (xi,yi) =
+      NewPlotArea $ _state_plotArea & plotArea_extents %~ rect_move ((1/10)*xi, (1/10)*yi)
     PlotArea{..} = _state_plotArea
     -- sumSegment (PAPoint _ yLL yLR, PAPoint _ yRL yRR) =
     --   sum $ map fromRational [yLL,yLR,yRL,yRR] :: Double

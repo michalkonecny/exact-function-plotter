@@ -446,19 +446,20 @@ viewState s@State{..} =
       text "Function f(x) = " 
     , input_ [ size_ "80", onChange act_on_function ]
     , br_ []
-    , text "Enclosure width tolerance = " 
+    , text "Enclosure width = 1/" 
     , input_ [ size_ "5", value_ (ms $ show _plotArea_targetYSegments), onChange act_on_targetYsegs ]
-    , br_ []
-    , text "Maximum segments = " 
+    -- , br_ []
+    , text " Max segments = " 
     , input_ [ size_ "5", value_ (ms $ show _plotArea_maxXSegments), onChange act_on_maxXsegs ]
-    , br_ []
-    , text "Minimum segments = " 
+    -- , br_ []
+    , text " Min segments = " 
     , input_ [ size_ "5", value_ (ms $ show _plotArea_minXSegments), onChange act_on_minXsegs ]
     , br_ []
     , text "Plot area: " 
     , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_left _plotArea_extents)), onChange act_on_xL ]
     , text " <= x <= " 
     , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_right _plotArea_extents)), onChange act_on_xR ]
+    , text " , " 
     , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_down _plotArea_extents)), onChange act_on_yL ]
     , text " <= y <= " 
     , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_up _plotArea_extents)), onChange act_on_yR ]
@@ -466,7 +467,7 @@ viewState s@State{..} =
     , text "Zoom "
     , button_ [ onClick (zoomi (-1)) ] [ text "-"]
     , button_ [ onClick (zoomi 1) ] [text "+"]
-    , text "Move "
+    , text " Move "
     , button_ [ onClick (pani (1,0)) ] [ text "←"]
     , button_ [ onClick (pani (-1,0)) ] [ text "→"]
     , button_ [ onClick (pani (0,-1)) ] [ text "↑"]

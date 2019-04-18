@@ -111,6 +111,21 @@ rect_down wrap (Rectangle a b c d) = fmap (\c' -> Rectangle a b c' d) (wrap c)
 rect_up :: Lens' (Rectangle a) a
 rect_up wrap (Rectangle a b c d) = fmap (\d' -> Rectangle a b c d') (wrap d)
 
+rect_zoom :: (Fractional a) => a -> Rectangle a -> Rectangle a
+rect_zoom ratio (Rectangle xL xR yL yR) = 
+  Rectangle (xM - xri) (xM + xri) (yM - yri) (yM + yri)
+  where
+  xM = (xL + xR)/2
+  yM = (yL + yR)/2
+  xr = (xR - xL)/2
+  yr = (yR - yL)/2
+  xri = xr * ratio
+  yri = yr * ratio
+
+rect_move :: (Fractional a) => (a,a) -> Rectangle a -> Rectangle a
+rect_move (xd,yd) (Rectangle xL xR yL yR) = 
+  Rectangle (xL + xd) (xR + xd) (yL + yd) (yR + yd)
+
 plotArea_isPanned :: PlotArea -> PlotArea -> Bool
 plotArea_isPanned 
   (PlotArea e1 tY1 maxX1 minX1) 
@@ -163,8 +178,6 @@ data Action
   | NewWorker !(String, ThreadId)
   | NewEnclosureSegments !(String, Bool, PAEnclosure)
   | SetDrag Bool
-  | Pan (Int,Int)
-  | Zoom Int
   deriving (Show, Eq)
 
 -- | Entry point for a miso application
@@ -253,45 +266,26 @@ updateState actionChan plotAreaTV s action =
       where
       s' = s & state_plotArea_Movement . plotAreaMovement_mouseDrag .~ isDrag
       pa = s ^. state_plotArea
-    (Pan pos@(x,y)) ->
-      noEff s2
-      where
-      isDrag = s ^. state_plotArea_Movement . plotAreaMovement_mouseDrag
-      s1 = s 
-        & state_plotArea_Movement . plotAreaMovement_mousePos .~ Just pos
-      s2 
-        | isDrag = s1 & state_plotArea . plotArea_extents %~ moveExtents
-        | otherwise = s1
-      moveExtents extents@(Rectangle xL xR yL yR) =
-        case s ^. state_plotArea_Movement . plotAreaMovement_mousePos of
-          Just (oldX, oldY) -> 
-            let
-              xRes = (round $ xR-xL) % w
-              yRes = (round $ yR-yL) % h
-              xd = (toRational $ x - oldX) * xRes
-              yd = (toRational $ y - oldY) * yRes
-            in
-            Rectangle (xL - xd) (xR - xd) (yL + yd) (yR + yd)
-          _ -> extents
-    Zoom i ->
-      (s' <# ) $ liftIO $ do
-        putStrLn $ "Zoom " ++ (show i)
-        atomically $ writeTVar plotAreaTV pa
-        pure NoOp
-      where
-      s' = s & state_plotArea . plotArea_extents %~ zoomi
-      pa = s' ^. state_plotArea
-      zoomi (Rectangle xL xR yL yR) = 
-        Rectangle (xM - xri) (xM + xri) (yM - yri) (yM + yri)
-        where
-        xM = (xL + xR)/2
-        yM = (yL + yR)/2
-        stepRatio = 120/100
-        xr = (xR - xL)/2
-        yr = (yR - yL)/2
-        iRatio = stepRatio ^^ (-i)
-        xri = xr * iRatio
-        yri = yr * iRatio
+    -- (Pan pos@(x,y)) ->
+    --   noEff s2
+    --   where
+    --   isDrag = s ^. state_plotArea_Movement . plotAreaMovement_mouseDrag
+    --   s1 = s 
+    --     & state_plotArea_Movement . plotAreaMovement_mousePos .~ Just pos
+    --   s2 
+    --     | isDrag = s1 & state_plotArea . plotArea_extents %~ moveExtents
+    --     | otherwise = s1
+    --   moveExtents extents@(Rectangle xL xR yL yR) =
+    --     case s ^. state_plotArea_Movement . plotAreaMovement_mousePos of
+    --       Just (oldX, oldY) -> 
+    --         let
+    --           xRes = (round $ xR-xL) % w
+    --           yRes = (round $ yR-yL) % h
+    --           xd = (toRational $ x - oldX) * xRes
+    --           yd = (toRational $ y - oldY) * yRes
+    --         in
+    --         Rectangle (xL - xd) (xR - xd) (yL + yd) (yR + yd)
+    --       _ -> extents
     NoOpErr errMsg -> noEff $ s & state_err .~ (Just errMsg)
     NoOp -> noEff s
 
@@ -467,8 +461,8 @@ viewState s@State{..} =
     , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_up _plotArea_extents)), onChange act_on_yR ]
     , br_ []
     , text "Zoom "
-    , button_ [ onClick (Zoom (-1)), Miso.style_ (Map.singleton "text-size" "40pt") ] [text "-"]
-    , button_ [ onClick (Zoom 1) ] [text "+"]
+    , button_ [ onClick (zoomi (-1)) ] [ text "-"]
+    , button_ [ onClick (zoomi 1) ] [text "+"]
     , br_ []
     , text (case _state_err of Nothing -> ""; Just msg -> (ms $ "Error: " ++ msg)) 
     , br_ []
@@ -479,6 +473,9 @@ viewState s@State{..} =
     -- ++ [br_ [], text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
     -- ++ [br_ [], text $ ms $ show $ product [1..10000]]
     where
+    zoomi :: Int -> Action
+    zoomi i =
+      NewPlotArea $ _state_plotArea & plotArea_extents %~ rect_zoom ((110/100)^^(-i))
     PlotArea{..} = _state_plotArea
     -- sumSegment (PAPoint _ yLL yLR, PAPoint _ yRL yRR) =
     --   sum $ map fromRational [yLL,yLR,yRL,yRR] :: Double

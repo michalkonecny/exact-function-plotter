@@ -50,7 +50,8 @@ import Function
 data State
   = State 
   {
-      _state_plotArea :: PlotArea
+      _state_err :: Maybe String
+    , _state_plotArea :: PlotArea
     , _state_fn_exprs :: Map.Map String RF
     , _state_fn_workers :: Map.Map String ThreadId
     , _state_fn_encls :: Map.Map String PAEnclosure
@@ -60,16 +61,18 @@ data State
 
 -- makeLenses ''State
 
+state_err :: Lens' State (Maybe String)
+state_err wrap (State a b c d e f) = fmap (\a' -> State a' b c d e f) (wrap a)
 state_plotArea :: Lens' State PlotArea
-state_plotArea wrap (State a b c d e) = fmap (\a' -> State a' b c d e) (wrap a)
+state_plotArea wrap (State a b c d e f) = fmap (\b' -> State a b' c d e f) (wrap b)
 state_fn_exprs :: Lens' State (Map.Map String RF)
-state_fn_exprs wrap (State a b c d e) = fmap (\b' -> State a b' c d e) (wrap b)
+state_fn_exprs wrap (State a b c d e f) = fmap (\c' -> State a b c' d e f) (wrap c)
 state_fn_workers :: Lens' State (Map.Map String ThreadId)
-state_fn_workers wrap (State a b c d e) = fmap (\c' -> State a b c' d e) (wrap c)
+state_fn_workers wrap (State a b c d e f) = fmap (\d' -> State a b c d' e f) (wrap d)
 state_fn_encls :: Lens' State (Map.Map String PAEnclosure)
-state_fn_encls wrap (State a b c d e) = fmap (\d' -> State a b c d' e) (wrap d)
+state_fn_encls wrap (State a b c d e f) = fmap (\e' -> State a b c d e' f) (wrap e)
 state_plotArea_Movement :: Lens' State PlotAreaMovement
-state_plotArea_Movement wrap (State a b c d e) = fmap (\e' -> State a b c d e') (wrap e)
+state_plotArea_Movement wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
 
 data PlotArea = 
   PlotArea
@@ -154,6 +157,7 @@ data PAPoint a =
 
 data Action
   = NoOp
+  | NoOpErr String
   | NewPlotArea !PlotArea
   | NewFunction !(String, RF)
   | NewWorker !(String, ThreadId)
@@ -182,7 +186,7 @@ main = do
     runJSaddle undefined $ startApp App {..}
     where
     initialAction = NoOp
-    model  = State initialPlotArea Map.empty Map.empty Map.empty initialPlotAreaMovement
+    model  = State Nothing initialPlotArea Map.empty Map.empty Map.empty initialPlotAreaMovement
     update = flip $ updateState actionChan plotAreaTV
     view   = viewState
     events = defaultEvents
@@ -288,6 +292,7 @@ updateState actionChan plotAreaTV s action =
         iRatio = stepRatio ^^ (-i)
         xri = xr * iRatio
         yri = yr * iRatio
+    NoOpErr errMsg -> noEff $ s & state_err .~ (Just errMsg)
     NoOp -> noEff s
 
 
@@ -435,7 +440,11 @@ enclWorker actionChan plotAreaTV name rf =
 
 -- | Constructs a virtual DOM from a state
 viewState :: State -> View Action
-viewState s@State{..} = div_ [] $ 
+viewState s@State{..} = 
+    div_ 
+    [
+      Miso.style_ (Map.singleton "font-size" "20pt")
+    ] $ 
     [
       text "Function f(x) = " 
     , input_ [ size_ "80", onChange act_on_function ]
@@ -458,8 +467,10 @@ viewState s@State{..} = div_ [] $
     , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_up _plotArea_extents)), onChange act_on_yR ]
     , br_ []
     , text "Zoom "
-    , button_ [ onClick (Zoom (-1)) ] [text "-"]
+    , button_ [ onClick (Zoom (-1)), Miso.style_ (Map.singleton "text-size" "40pt") ] [text "-"]
     , button_ [ onClick (Zoom 1) ] [text "+"]
+    , br_ []
+    , text (case _state_err of Nothing -> ""; Just msg -> (ms $ "Error: " ++ msg)) 
     , br_ []
     ]
     ++ viewResult s
@@ -518,12 +529,13 @@ viewResult State {..} =
         -- text (ms transformS),
         div_ 
           [
-            Miso.style_ (Map.singleton "user-select" "none")
-          , Miso.on "mousedown" emptyDecoder (const $ SetDrag True)
-          , Miso.on "mousemove" xyPanDecoder id
-          , Miso.on "mouseup" emptyDecoder (const $ SetDrag False)
-          , Miso.on "mouseout" emptyDecoder (const $ SetDrag False)
-          , Miso.on "wheel" deltaYZoomDecoder id
+          --   Miso.style_ (Map.singleton "user-select" "none")
+          -- , Miso.on "mousedown" emptyDecoder (const $ SetDrag True)
+          -- -- , onNoDef "mousemove" xyPanDecoder id
+          -- , Miso.on "mousemove" emptyDecoder (const $ NoOpErr "mousemove")
+          -- , Miso.on "mouseup" emptyDecoder (const $ SetDrag False)
+          -- , Miso.on "mouseout" emptyDecoder (const $ SetDrag False)
+          -- , Miso.on "wheel" deltaYZoomDecoder id
           ]
           [
             svg_ 
@@ -535,24 +547,25 @@ viewResult State {..} =
           ]
     ]
     where
-    xyPanDecoder :: Decoder Action
-    xyPanDecoder = Decoder {..}
-      where
-        decodeAt = DecodeTarget mempty
-        decoder = withObject "event" $ \o -> ms2action <$> (o .: "clientX") <*> (o .: "clientY")
-        ms2action sX sY =
-          case (reads (fromMisoString sX), reads (fromMisoString sY)) of
-            ([(x,"")], [(y,"")]) -> Pan (x,y)
-            _ -> NoOp
-    deltaYZoomDecoder :: Decoder Action
-    deltaYZoomDecoder = Decoder {..}
-      where
-        decodeAt = DecodeTarget mempty
-        decoder = withObject "event" $ \o -> ms2action <$> (o .: "deltaY")
-        ms2action s =
-          case reads (fromMisoString s) of
-            [(i,"")] -> Zoom (round (i :: Double))
-            _ -> NoOp
+    -- onNoDef = Miso.onWithOptions (Miso.Options True True) -- preventDefault = True
+    -- xyPanDecoder :: Decoder Action
+    -- xyPanDecoder = Decoder {..}
+    --   where
+    --     decodeAt = DecodeTarget mempty
+    --     decoder = withObject "event" $ \o -> ms2action <$> (o .: "clientX") <*> (o .: "clientY")
+    --     ms2action sX sY =
+    --       case (reads (fromMisoString sX), reads (fromMisoString sY)) of
+    --         ([(x,"")], [(y,"")]) -> Pan (x,y)
+    --         _ -> NoOpErr $ printf ("sX = %s, sY = %s") (fromMisoString sX :: String) (fromMisoString sY :: String)
+    -- deltaYZoomDecoder :: Decoder Action
+    -- deltaYZoomDecoder = Decoder {..}
+    --   where
+    --     decodeAt = DecodeTarget mempty
+    --     decoder = withObject "event" $ \o -> ms2action <$> (o .: "deltaY")
+    --     ms2action s =
+    --       case reads (fromMisoString s) of
+    --         [(i,"")] -> Zoom (round (i :: Double))
+    --         _ -> NoOp
 
     viewHeightAttr = Svg.height_ (ms (q2d hQ))
     viewWidthAttr = Svg.width_ (ms (q2d wQ))

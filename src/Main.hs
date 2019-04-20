@@ -52,12 +52,15 @@ data State
   {
       _state_err :: Maybe String
     , _state_plotArea :: PlotArea
-    , _state_fn_exprs :: Map.Map String RF
-    , _state_fn_workers :: Map.Map String ThreadId
-    , _state_fn_encls :: Map.Map String PAEnclosure
-    , _state_plotArea_Movement :: PlotAreaMovement
+    , _state_fn_exprs :: Map.Map FnName RF
+    , _state_fn_accuracy :: Map.Map FnName PlotAccuracy
+    , _state_fn_workers :: Map.Map FnName ThreadId
+    , _state_fn_encls :: Map.Map FnName PAEnclosure
+    -- , _state_plotArea_Movement :: PlotAreaMovement
   }
   deriving (Show, Eq)
+
+type FnName = String
 
 -- makeLenses ''State
 
@@ -65,33 +68,37 @@ state_err :: Lens' State (Maybe String)
 state_err wrap (State a b c d e f) = fmap (\a' -> State a' b c d e f) (wrap a)
 state_plotArea :: Lens' State PlotArea
 state_plotArea wrap (State a b c d e f) = fmap (\b' -> State a b' c d e f) (wrap b)
-state_fn_exprs :: Lens' State (Map.Map String RF)
+state_fn_exprs :: Lens' State (Map.Map FnName RF)
 state_fn_exprs wrap (State a b c d e f) = fmap (\c' -> State a b c' d e f) (wrap c)
-state_fn_workers :: Lens' State (Map.Map String ThreadId)
-state_fn_workers wrap (State a b c d e f) = fmap (\d' -> State a b c d' e f) (wrap d)
-state_fn_encls :: Lens' State (Map.Map String PAEnclosure)
-state_fn_encls wrap (State a b c d e f) = fmap (\e' -> State a b c d e' f) (wrap e)
-state_plotArea_Movement :: Lens' State PlotAreaMovement
-state_plotArea_Movement wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
+state_fn_accuracy :: Lens' State (Map.Map FnName PlotAccuracy)
+state_fn_accuracy wrap (State a b c d e f) = fmap (\d' -> State a b c d' e f) (wrap d)
+state_fn_workers :: Lens' State (Map.Map FnName ThreadId)
+state_fn_workers wrap (State a b c d e f) = fmap (\e' -> State a b c d e' f) (wrap e)
+state_fn_encls :: Lens' State (Map.Map FnName PAEnclosure)
+state_fn_encls wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
+-- state_plotArea_Movement :: Lens' State PlotAreaMovement
+-- state_plotArea_Movement wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
 
-data PlotArea = 
-  PlotArea
+data PlotAccuracy = 
+  PlotAccuracy
   {
-    _plotArea_extents :: Rectangle Rational
-  , _plotArea_targetYSegments :: Int
-  , _plotArea_maxXSegments :: Int
-  , _plotArea_minXSegments :: Int
+    _plotAccuracy_targetYSegments :: Int
+  , _plotAccuracy_maxXSegments :: Int
+  , _plotAccuracy_minXSegments :: Int
   }
   deriving (Show, Eq)
 
-plotArea_extents :: Lens' PlotArea (Rectangle Rational)
-plotArea_extents wrap (PlotArea a b c d) = fmap (\a' -> PlotArea a' b c d) (wrap a)
-plotArea_targetYsegments :: Lens' PlotArea Int
-plotArea_targetYsegments wrap (PlotArea a b c d) = fmap (\b' -> PlotArea a b' c d) (wrap b)
-plotArea_maxXSegments :: Lens' PlotArea Int
-plotArea_maxXSegments wrap (PlotArea a b c d) = fmap (\c' -> PlotArea a b c' d) (wrap c)
-plotArea_minXSegments :: Lens' PlotArea Int
-plotArea_minXSegments wrap (PlotArea a b c d) = fmap (\d' -> PlotArea a b c d') (wrap d)
+defaultPlotAccuracy :: PlotAccuracy
+defaultPlotAccuracy = PlotAccuracy 100 1024 8
+
+type PlotArea = Rectangle Rational
+
+plotAccuracy_targetYsegments :: Lens' PlotAccuracy Int
+plotAccuracy_targetYsegments wrap (PlotAccuracy a b c) = fmap (\a' -> PlotAccuracy a' b c) (wrap a)
+plotAccuracy_maxXSegments :: Lens' PlotAccuracy Int
+plotAccuracy_maxXSegments wrap (PlotAccuracy a b c) = fmap (\b' -> PlotAccuracy a b' c) (wrap b)
+plotAccuracy_minXSegments :: Lens' PlotAccuracy Int
+plotAccuracy_minXSegments wrap (PlotAccuracy a b c) = fmap (\c' -> PlotAccuracy a b c') (wrap c)
 
 data Rectangle a = Rectangle
   {
@@ -129,14 +136,6 @@ rect_move (xp,yp) (Rectangle xL xR yL yR) =
   xd = xp * (xR-xL)
   yd = yp * (yR-yL)
 
-plotArea_isPanned :: PlotArea -> PlotArea -> Bool
-plotArea_isPanned 
-  (PlotArea e1 tY1 maxX1 minX1) 
-  (PlotArea e2 tY2 maxX2 minX2) =
-  tY1 == tY2 && maxX1 == maxX2 && minX1 == minX2
-  &&
-  rect_isPanned e1 e2  
-
 rect_isPanned :: (Eq a, Num a) => Rectangle a -> Rectangle a -> Bool
 rect_isPanned
   (Rectangle l1 r1 d1 u1)
@@ -144,18 +143,18 @@ rect_isPanned
   =
   r1 - l1 == r2 - l2 && u1 - d1 == u2 - d2
 
-data PlotAreaMovement =
-  PlotAreaMovement
-  {
-    _plotAreaMovement_mouseDrag :: Bool
-  , _plotAreaMovement_mousePos :: Maybe (Int, Int)
-  }
-  deriving (Show, Eq)
+-- data PlotAreaMovement =
+--   PlotAreaMovement
+--   {
+--     _plotAreaMovement_mouseDrag :: Bool
+--   , _plotAreaMovement_mousePos :: Maybe (Int, Int)
+--   }
+--   deriving (Show, Eq)
 
-plotAreaMovement_mouseDrag :: Lens' PlotAreaMovement Bool
-plotAreaMovement_mouseDrag wrap (PlotAreaMovement a b) = fmap (\a' -> PlotAreaMovement a' b) (wrap a)
-plotAreaMovement_mousePos :: Lens' PlotAreaMovement (Maybe (Int, Int))
-plotAreaMovement_mousePos wrap (PlotAreaMovement a b) = fmap (\b' -> PlotAreaMovement a b') (wrap b)
+-- plotAreaMovement_mouseDrag :: Lens' PlotAreaMovement Bool
+-- plotAreaMovement_mouseDrag wrap (PlotAreaMovement a b) = fmap (\a' -> PlotAreaMovement a' b) (wrap a)
+-- plotAreaMovement_mousePos :: Lens' PlotAreaMovement (Maybe (Int, Int))
+-- plotAreaMovement_mousePos wrap (PlotAreaMovement a b) = fmap (\b' -> PlotAreaMovement a b') (wrap b)
 
 type PAEnclosure = [PASegment]
 
@@ -177,10 +176,11 @@ data Action
   = NoOp
   | NoOpErr String
   | NewPlotArea !PlotArea
-  | NewFunction !(String, RF)
-  | NewWorker !(String, ThreadId)
-  | NewEnclosureSegments !(String, Bool, PAEnclosure)
-  | SetDrag Bool
+  | NewFunction !(FnName, RF)
+  | NewAccuracy !(FnName, PlotAccuracy)
+  | NewWorker !(FnName, ThreadId)
+  | NewEnclosureSegments !(FnName, Bool, PAEnclosure)
+  -- | SetDrag Bool
   deriving (Show, Eq)
 
 -- | Entry point for a miso application
@@ -189,21 +189,22 @@ main = do
   -- pure ()
   actionChan <- newChan
   plotAreaTV <- atomically $ newTVar initialPlotArea
-  continueWithVars actionChan plotAreaTV
+  plotAccuracyTV <- atomically $ newTVar Map.empty
+  continueWithVars actionChan plotAreaTV plotAccuracyTV
   where
   initialPlotArea = 
-    PlotArea (Rectangle (-1) 1 (-1) 1)
-      initialTargetYSegments
-      initialMaxXSegments
-      initialMinXSegments
-  initialPlotAreaMovement = 
-    PlotAreaMovement False Nothing
-  continueWithVars actionChan plotAreaTV =
+    Rectangle (-1) 1 (-1) 1
+      -- initialTargetYSegments
+      -- initialMaxXSegments
+      -- initialMinXSegments
+  -- initialPlotAreaMovement = 
+  --   PlotAreaMovement False Nothing
+  continueWithVars actionChan plotAreaTV plotAccuracyTV =
     runJSaddle undefined $ startApp App {..}
     where
     initialAction = NoOp
-    model  = State Nothing initialPlotArea Map.empty Map.empty Map.empty initialPlotAreaMovement
-    update = flip $ updateState actionChan plotAreaTV
+    model  = State Nothing initialPlotArea Map.empty Map.empty Map.empty Map.empty
+    update = flip $ updateState actionChan plotAreaTV plotAccuracyTV
     view   = viewState
     events = defaultEvents
     subs   = [actionSub actionChan] 
@@ -226,33 +227,47 @@ actionSub actionChan sink = void . liftIO . forkIO $ keepPassingActions
     keepPassingActions
 
 -- | Updates state, optionally introducing side effects
-updateState :: (Chan Action) -> (TVar PlotArea) -> State -> Action -> Effect Action State
-updateState actionChan plotAreaTV s action =
+updateState :: (Chan Action) -> (TVar PlotArea) -> (TVar (Map.Map FnName (TVar PlotAccuracy))) -> State -> Action -> Effect Action State
+updateState actionChan plotAreaTV plotAccuracyTV s action =
   case action of
     (NewPlotArea pa) ->
       ((s & state_plotArea .~ pa) <#) $ liftIO $ do
         atomically $ writeTVar plotAreaTV pa
-        pure NoOp
+        return NoOp
+    (NewAccuracy (name, pac)) ->
+      ((s & state_fn_accuracy . at name .~ Just pac) <#) $ liftIO $ do
+        atomically $ do
+          pacMap <- readTVar plotAccuracyTV
+          case pacMap ^. at name of
+            Just pacTV -> writeTVar pacTV pac
+            _ -> pure ()
+        return NoOp
     (NewFunction (name, rf)) ->
       (s' <#) $ liftIO $ do
+        fnPlotAccuracyTV <- atomically $ do
+          fnPlotAccuracyTV <- newTVar plotAccuracy
+          paMap <- readTVar plotAccuracyTV
+          writeTVar plotAccuracyTV $ paMap & (at name) .~ Just fnPlotAccuracyTV
+          return fnPlotAccuracyTV
         case s ^. state_fn_workers . at name of
           Just otid -> killThread otid -- stop previous worker thread
           _ -> pure ()
         -- start new worker thread:
-        threadId <- forkIO $ enclWorker actionChan plotAreaTV name rf
+        threadId <- forkIO $ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name rf
         -- register the worker thread:
         pure $ NewWorker (name, threadId) 
       where
+      plotAccuracy =
+        case s ^. state_fn_accuracy . at name of
+          Just pac -> pac
+          _ -> defaultPlotAccuracy
       s' =
         s & state_fn_exprs . at name .~ Just rf 
+          & state_fn_accuracy . at name .~ Just plotAccuracy
           & state_fn_workers . at name .~ Nothing
           & state_fn_encls . at name .~ Nothing
     (NewWorker (name, tid)) ->
-      (s' <# ) $ liftIO $ do
-        pure NoOp
-      where
-      s' = 
-        s & state_fn_workers . at name .~ Just tid
+      noEff $ s & state_fn_workers . at name .~ Just tid
     (NewEnclosureSegments (name, shouldAppend, encl)) ->
       noEff $ 
         s & state_fn_encls . at name %~ addEncl
@@ -260,15 +275,15 @@ updateState actionChan plotAreaTV s action =
       addEncl (Just oldEncl) 
         | shouldAppend = Just $ oldEncl ++ encl
       addEncl _ = Just encl
-    SetDrag isDrag ->
-      if isDrag 
-        then noEff s'
-        else (s' <#) $ liftIO $ do
-          atomically $ writeTVar plotAreaTV pa
-          pure NoOp
-      where
-      s' = s & state_plotArea_Movement . plotAreaMovement_mouseDrag .~ isDrag
-      pa = s ^. state_plotArea
+    -- SetDrag isDrag ->
+    --   if isDrag 
+    --     then noEff s'
+    --     else (s' <#) $ liftIO $ do
+    --       atomically $ writeTVar plotAreaTV pa
+    --       pure NoOp
+    --   where
+    --   s' = s & state_plotArea_Movement . plotAreaMovement_mouseDrag .~ isDrag
+    --   pa = s ^. state_plotArea
     -- (Pan pos@(x,y)) ->
     --   noEff s2
     --   where
@@ -293,22 +308,23 @@ updateState actionChan plotAreaTV s action =
     NoOp -> noEff s
 
 
-enclWorker :: Chan Action -> TVar PlotArea -> String -> RF -> IO ()
-enclWorker actionChan plotAreaTV name rf =
+enclWorker :: Chan Action -> TVar PlotArea -> TVar PlotAccuracy -> String -> RF -> IO ()
+enclWorker actionChan plotAreaTV fnPlotAccuracyTV name rf =
   waitForAreaAndAct [] Nothing
   where
   waitForAreaAndAct threadIds maybePrevCompInfo =
     do
     -- wait until there is a change in the plotArea, 
     -- then work out whether the change requires reset or append:
-    (plotArea, isPanned) <- atomically $ do
+    (plotArea, plotAccuracy, isPanned) <- atomically $ do
       pa <- readTVar plotAreaTV
+      pac <- readTVar fnPlotAccuracyTV
       case maybePrevCompInfo of
-        Nothing -> pure (pa, False)
-        Just (_, oldpa) ->
-          if oldpa == pa then retry
+        Nothing -> pure (pa, pac, False)
+        Just (_, oldpa, oldpac) ->
+          if oldpa == pa && oldpac == pac then retry
           else 
-            pure (pa, plotArea_isPanned oldpa pa)
+            pure (pa, pac, oldpac == pac && rect_isPanned oldpa pa)
     -- if resetting, kill any potentially active threads:
     case isPanned of
       False -> mapM_ killThread threadIds
@@ -316,7 +332,7 @@ enclWorker actionChan plotAreaTV name rf =
     -- work over which interval to compute, if at all:
     (mxC, x) <-
       case maybePrevCompInfo of
-        Just (oxC, _) | isPanned ->
+        Just (oxC, _, _) | isPanned ->
           pure (get_xC_x oxC plotArea)
         _ -> 
           pure (Just xP, xP)
@@ -326,14 +342,14 @@ enclWorker actionChan plotAreaTV name rf =
     case mxC of
       Just xC ->
         do
-        threadId <- forkIO $ sendNewEnclosureSegments isPanned plotArea xC
+        threadId <- forkIO $ sendNewEnclosureSegments isPanned plotArea plotAccuracy xC
         case isPanned of
-          True -> waitForAreaAndAct (threadId : threadIds) (Just (x, plotArea))
-          _    -> waitForAreaAndAct [threadId] (Just (x, plotArea))
+          True -> waitForAreaAndAct (threadId : threadIds) (Just (x, plotArea, plotAccuracy))
+          _    -> waitForAreaAndAct [threadId] (Just (x, plotArea, plotAccuracy))
       _ -> 
         waitForAreaAndAct threadIds maybePrevCompInfo -- ie do nothing this time
     where
-    get_xC_x (oxCL, oxCR) plotArea
+    get_xC_x (oxCL, oxCR) pa
       | xL < oxCL && oxCL <= xR && xR <= oxCR = (Just (xL, oxCL), (xL, oxCR))
           -- ie a part on the left needs computing
       | oxCL <= xL && xL <= oxCR && oxCR < xR = (Just (oxCR, xR), (oxCL, xR))
@@ -341,17 +357,18 @@ enclWorker actionChan plotAreaTV name rf =
       | oxCL <= xL && xR <= oxCR = (Nothing, (oxCL, oxCR))
       | otherwise = (Just (xL, xR), (xL, xR))
       where
-      (Rectangle xL xR _ _) = plotArea ^. plotArea_extents
+      (Rectangle xL xR _ _) = pa
     plotArea_x pa = (xL, xR)
       where
-      (Rectangle xL xR _ _) = pa ^. plotArea_extents
+      (Rectangle xL xR _ _) = pa
 
-  sendNewEnclosureSegments isPanned plotArea (xCL, xCR) =
+  sendNewEnclosureSegments isPanned plotArea plotAccuracy (xCL, xCR) =
     writeChan actionChan 
       (NewEnclosureSegments (name, shouldAppend, enclosure))
     where
     shouldAppend = isPanned
-    PlotArea (Rectangle xL xR yL yR) yN xMaxN xMinN = plotArea
+    Rectangle xL xR yL yR = plotArea
+    PlotAccuracy yN xMaxN xMinN = plotAccuracy
     xLd = q2d xL
     xRd = q2d xR
     xWd = xRd - xLd
@@ -444,25 +461,24 @@ viewState s@State{..} =
     ] $ 
     [
       text "Function f(x) = " 
-    , input_ [ size_ "80", onChange act_on_function ]
+    , input_ [ size_ "80", onChange $ act_on_function "f"]
     , br_ []
-    , text "Enclosure width = 1/" 
-    , input_ [ size_ "5", value_ (ms $ show _plotArea_targetYSegments), onChange act_on_targetYsegs ]
+    , text "  Accuracy ~ w/" 
+    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_targetYSegments $ pac "f"), onChange $ act_on_targetYsegs "f" ]
     -- , br_ []
-    , text " Max segments = " 
-    , input_ [ size_ "5", value_ (ms $ show _plotArea_maxXSegments), onChange act_on_maxXsegs ]
-    -- , br_ []
-    , text " Min segments = " 
-    , input_ [ size_ "5", value_ (ms $ show _plotArea_minXSegments), onChange act_on_minXsegs ]
+    , text "  " 
+    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_minXSegments $ pac "f"), onChange $ act_on_minXsegs "f" ]
+    , text " <= segments <= " 
+    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_maxXSegments $ pac "f"), onChange $ act_on_maxXsegs "f" ]
     , br_ []
     , text "Plot area: " 
-    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_left _plotArea_extents)), onChange act_on_xL ]
+    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_left _state_plotArea)), onChange act_on_xL ]
     , text " <= x <= " 
-    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_right _plotArea_extents)), onChange act_on_xR ]
+    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_right _state_plotArea)), onChange act_on_xR ]
     , text " , " 
-    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_down _plotArea_extents)), onChange act_on_yL ]
+    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_down _state_plotArea)), onChange act_on_yL ]
     , text " <= y <= " 
-    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_up _plotArea_extents)), onChange act_on_yR ]
+    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_up _state_plotArea)), onChange act_on_yR ]
     , br_ []
     , text "Zoom "
     , button_ [ onClick (zoomi (-1)) ] [ text "-"]
@@ -482,46 +498,44 @@ viewState s@State{..} =
     -- ++ [br_ [], text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
     -- ++ [br_ [], text $ ms $ show $ product [1..10000]]
     where
+    pac fnname = 
+      case s ^. state_fn_accuracy . at fnname of
+        Just fpac -> fpac
+        _ -> defaultPlotAccuracy
     zoomi :: Int -> Action
     zoomi i =
-      NewPlotArea $ _state_plotArea & plotArea_extents %~ rect_zoom ((110/100)^^(-i))
+      NewPlotArea $ rect_zoom ((110/100)^^(-i)) _state_plotArea
     pani :: (Rational, Rational) -> Action
     pani (xi,yi) =
-      NewPlotArea $ _state_plotArea & plotArea_extents %~ rect_move ((1/10)*xi, (1/10)*yi)
-    PlotArea{..} = _state_plotArea
+      NewPlotArea $ rect_move ((1/10)*xi, (1/10)*yi) _state_plotArea
     -- sumSegment (PAPoint _ yLL yLR, PAPoint _ yRL yRR) =
     --   sum $ map fromRational [yLL,yLR,yRL,yRR] :: Double
-    act_on_function fMS = 
+    act_on_function fnname fMS = 
       case (parseRF $ fromMisoString fMS) of
-        Right rf -> NewFunction ("f", rf)
+        Right rf -> NewFunction (fnname, rf)
         Left _errmsg -> NoOp -- TODO
-    act_on_targetYsegs nMS = 
+    act_on_targetYsegs = 
+      act_on_plotAccuracy plotAccuracy_targetYsegments
+    act_on_maxXsegs = 
+      act_on_plotAccuracy plotAccuracy_maxXSegments
+    act_on_minXsegs = 
+      act_on_plotAccuracy plotAccuracy_minXSegments
+    act_on_plotAccuracy paclens fnname nMS = 
         case reads (fromMisoString nMS) of
-            [(n,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_targetYsegments .~ n)
+            [(n,_)] -> NewAccuracy (fnname, fpac)
+                where
+                fpac = 
+                  case (s ^. state_fn_accuracy . at fnname) of
+                    Just fpac2 -> fpac2 & paclens .~ n
+                    _ ->  defaultPlotAccuracy
             _ -> NoOp
-    act_on_maxXsegs nMS = 
-        case reads (fromMisoString nMS) of
-            [(n,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_maxXSegments .~ n)
-            _ -> NoOp
-    act_on_minXsegs nMS = 
-        case reads (fromMisoString nMS) of
-            [(n,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_minXSegments .~ n)
-            _ -> NoOp
-    act_on_xL xMS = 
+    act_on_xL = act_on_plotArea rect_left
+    act_on_xR = act_on_plotArea rect_right
+    act_on_yL = act_on_plotArea rect_down
+    act_on_yR = act_on_plotArea rect_up
+    act_on_plotArea palens xMS = 
         case reads (fromMisoString xMS) of
-            [(xL,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_extents . rect_left .~ (d2q xL))
-            _ -> NoOp
-    act_on_xR xMS = 
-        case reads (fromMisoString xMS) of
-            [(xR,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_extents . rect_right .~ (d2q xR))
-            _ -> NoOp
-    act_on_yL yMS = 
-        case reads (fromMisoString yMS) of
-            [(yL,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_extents . rect_down .~ (d2q yL))
-            _ -> NoOp
-    act_on_yR yMS = 
-        case reads (fromMisoString yMS) of
-            [(yR,_)] -> NewPlotArea ((s ^. state_plotArea) & plotArea_extents . rect_up .~ (d2q yR))
+            [(x,_)] -> NewPlotArea ((s ^. state_plotArea) & palens .~ (d2q x))
             _ -> NoOp
 
 h,w :: Integer
@@ -579,7 +593,7 @@ viewResult State {..} =
 
     viewHeightAttr = Svg.height_ (ms (q2d hQ))
     viewWidthAttr = Svg.width_ (ms (q2d wQ))
-    PlotArea (Rectangle xL xR yL yR) _ _ _ = _state_plotArea
+    Rectangle xL xR yL yR = _state_plotArea
     -- [xLd, xRd, yLd, yRd] = map q2d [xL, xR, yL, yR]
     transformPt (x,y) = (transformX x, transformY y)
     transformX x = (x-xL)*wQ/(xR-xL)

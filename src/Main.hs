@@ -163,7 +163,8 @@ type PASegment = (PAPoint Rational, PAPoint Rational)
 data PAPoint a = 
   PAPoint 
   {
-      _papt_x :: a
+      _papt_xL :: a
+    , _papt_xR :: a
     , _papt_yL :: a
     , _papt_yR :: a
   }
@@ -399,11 +400,11 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name rf =
         where m = (l+r)/2
       (lrEnclosure1, lrEnclosure0) = encloseSegment (l,r)
       tol0 = enclosure0Tolerance lrEnclosure0
-      enclosure0Tolerance (Just (_, PAPoint _ yiL yiR)) = (q2d yiR) - (q2d yiL)
+      enclosure0Tolerance (Just (_, PAPoint _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
       enclosure0Tolerance _ = yWd
       tol1 = enclosure1Tolerance lrEnclosure1
       -- tol1Vert = enclosure1VertTolerance lrEnclosure1
-      enclosure1Tolerance (Just (PAPoint xiL yiLL _yiLR, PAPoint xiR yiRL yiRR)) =
+      enclosure1Tolerance (Just (PAPoint xiL _ yiLL _yiLR, PAPoint xiR _ yiRL yiRR)) =
         xiW * yiW / (sqrt $ xiW^(2::Int) + yiD2^(2::Int))
         where
         yiW = (q2d yiRR) - (q2d yiRL)
@@ -437,7 +438,7 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name rf =
               yiRL = yiML + rad*yidL
               yiRR = yiMR + rad*yidR
             in
-            Just (PAPoint xiL yiLL yiLR, PAPoint xiR yiRL yiRR)
+            Just (PAPoint xiL xiL yiLL yiLR, PAPoint xiR xiR yiRL yiRR)
           _ -> Nothing
       enclosure0 =
         case (CDAR.lowerBound yi_A, CDAR.upperBound yi_A) of
@@ -446,7 +447,7 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name rf =
               yiL = toRational yiL_D 
               yiR = toRational yiR_D 
             in
-            Just (PAPoint xiL yiL yiR, PAPoint xiR yiL yiR)
+            Just (PAPoint xiL xiL yiL yiR, PAPoint xiR xiR yiL yiR)
           _ -> Nothing
     xPrec, yPrec :: CDAR.Precision
     xPrec = 10 + (round $ negate $ logBase 2 (minSegSize))
@@ -640,14 +641,22 @@ viewResult State {..} =
     renderEnclosure (_fName, enclosure) =
       map renderSegment enclosure
       where
-      renderSegment (PAPoint lx lyL lyR, PAPoint rx ryL ryR) =
+      renderSegment (PAPoint lxL lxR lyL lyR, PAPoint rxL rxR ryL ryR) =
         polygon_  [stroke_ "black", fill_ "pink", points_ pointsMS] []
         where
         pointsMS = ms $ intercalate " " $ map showPoint points
         showPoint (x,y) = showR x ++ "," ++ showR y
         showR :: Rational -> String
         showR q = show $ (fromRational q :: Double)
-        points = map transformPt [(lx, lyL), (lx, lyR), (rx, ryR), (rx, ryL)]
+        points = 
+          map transformPt (pointsL ++ pointsR) 
+          where
+          pointsL
+            | lyL <= ryL = [(lxL,lyL), (lxR,lyL),(rxR, ryL)]
+            | otherwise = [(lxL,lyL), (rxL,ryL),(rxR, ryL)]
+          pointsR
+            | lyR <= ryR = [(rxR,ryR), (rxL,ryR),(lxL, lyR)]
+            | otherwise = [(rxR,ryR), (lxR,lyR),(lxL, lyR)]
 
 
 q2d :: Rational -> Double

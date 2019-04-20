@@ -20,7 +20,8 @@ executable function-plotter
     other-modules:
       Function
     build-depends:
-        base, containers, time, mtl,
+        base < 5, 
+        containers, time, mtl,
         stm,
         lens, parsec,
         miso, jsaddle, ghcjs-dom,
@@ -28,6 +29,3 @@ executable function-plotter
     hs-source-dirs: src
     default-language: Haskell2010
     ghc-options: -threaded -Wall -ferror-spans
-
-
-

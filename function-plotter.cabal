@@ -19,6 +19,7 @@ executable function-plotter
     main-is: Main.hs
     other-modules:
       Expression
+      Curve
     build-depends:
         base < 5, 
         containers, time, mtl,

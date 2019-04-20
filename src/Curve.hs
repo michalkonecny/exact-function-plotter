@@ -25,7 +25,7 @@ data ParamCurve2D =
   Curve2D
   {
     _curve2D_dom :: (Rational, Rational)
-  , _curve2D_x :: RF
-  , _curve2D_y :: RF
+  , _curve2D_x :: RX
+  , _curve2D_y :: RX
   }
 

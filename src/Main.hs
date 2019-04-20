@@ -459,19 +459,16 @@ viewState s@State{..} =
     [
       Miso.style_ (Map.singleton "font-size" "20pt")
     ] $ 
+    viewFnControls "f1" s
+    ++ viewFnControls "f2" s
+    ++ viewResult s
+    -- ++ [br_ [], text (ms $ show $ _state_plotArea)]
+    -- ++ [br_ [], text (ms $ show $ _state_plotArea_Movement)]
+    -- ++ [br_ [], text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
+    -- ++ [br_ [], text $ ms $ show $ product [1..10000]]
+    ++
     [
-      text "Function f(x) = " 
-    , input_ [ size_ "80", onChange $ act_on_function "f"]
-    , br_ []
-    , text "  Accuracy ~ w/" 
-    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_targetYSegments $ pac "f"), onChange $ act_on_targetYsegs "f" ]
-    -- , br_ []
-    , text "  " 
-    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_minXSegments $ pac "f"), onChange $ act_on_minXsegs "f" ]
-    , text " <= segments <= " 
-    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_maxXSegments $ pac "f"), onChange $ act_on_maxXsegs "f" ]
-    , br_ []
-    , text "Plot area: " 
+      text "Plot area: " 
     , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_left _state_plotArea)), onChange act_on_xL ]
     , text " <= x <= " 
     , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_right _state_plotArea)), onChange act_on_xR ]
@@ -489,19 +486,16 @@ viewState s@State{..} =
     , button_ [ onClick (pani (0,-1)) ] [ text "↑"]
     , button_ [ onClick (pani (0,1)) ] [ text "↓"]
     , br_ []
-    , text (case _state_err of Nothing -> ""; Just msg -> (ms $ "Error: " ++ msg)) 
-    , br_ []
     ]
-    ++ viewResult s
-    -- ++ [br_ [], text (ms $ show $ _state_plotArea)]
-    -- ++ [br_ [], text (ms $ show $ _state_plotArea_Movement)]
-    -- ++ [br_ [], text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
-    -- ++ [br_ [], text $ ms $ show $ product [1..10000]]
     where
-    pac fnname = 
-      case s ^. state_fn_accuracy . at fnname of
-        Just fpac -> fpac
-        _ -> defaultPlotAccuracy
+    act_on_xL = act_on_plotArea rect_left
+    act_on_xR = act_on_plotArea rect_right
+    act_on_yL = act_on_plotArea rect_down
+    act_on_yR = act_on_plotArea rect_up
+    act_on_plotArea palens xMS = 
+        case reads (fromMisoString xMS) of
+            [(x,_)] -> NewPlotArea ((s ^. state_plotArea) & palens .~ (d2q x))
+            _ -> NoOp
     zoomi :: Int -> Action
     zoomi i =
       NewPlotArea $ rect_zoom ((110/100)^^(-i)) _state_plotArea
@@ -510,7 +504,30 @@ viewState s@State{..} =
       NewPlotArea $ rect_move ((1/10)*xi, (1/10)*yi) _state_plotArea
     -- sumSegment (PAPoint _ yLL yLR, PAPoint _ yRL yRR) =
     --   sum $ map fromRational [yLL,yLR,yRL,yRR] :: Double
-    act_on_function fnname fMS = 
+
+viewFnControls :: FnName -> State -> [View Action]
+viewFnControls fnname s@State{..} =
+    [
+      text $ s2ms $ printf "Function %s(x) = " fnname 
+    , input_ [ size_ "80", onChange $ act_on_function]
+    , br_ []
+    , text $ s2ms $ printf "%s(x) accuracy ~ w/" fnname
+    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_targetYSegments $ pac), onChange $ act_on_targetYsegs ]
+    -- , br_ []
+    , text "  " 
+    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_minXSegments $ pac), onChange $ act_on_minXsegs ]
+    , text " <= segments <= " 
+    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_maxXSegments $ pac), onChange $ act_on_maxXsegs ]
+    , br_ []
+    , text (case _state_err of Nothing -> ""; Just msg -> (ms $ "Error: " ++ msg)) 
+    , br_ []
+    ]
+    where
+    pac = 
+      case s ^. state_fn_accuracy . at fnname of
+        Just fpac -> fpac
+        _ -> defaultPlotAccuracy
+    act_on_function fMS = 
       case (parseRF $ fromMisoString fMS) of
         Right rf -> NewFunction (fnname, rf)
         Left _errmsg -> NoOp -- TODO
@@ -520,7 +537,7 @@ viewState s@State{..} =
       act_on_plotAccuracy plotAccuracy_maxXSegments
     act_on_minXsegs = 
       act_on_plotAccuracy plotAccuracy_minXSegments
-    act_on_plotAccuracy paclens fnname nMS = 
+    act_on_plotAccuracy paclens nMS = 
         case reads (fromMisoString nMS) of
             [(n,_)] -> NewAccuracy (fnname, fpac)
                 where
@@ -529,14 +546,7 @@ viewState s@State{..} =
                     Just fpac2 -> fpac2 & paclens .~ n
                     _ ->  defaultPlotAccuracy
             _ -> NoOp
-    act_on_xL = act_on_plotArea rect_left
-    act_on_xR = act_on_plotArea rect_right
-    act_on_yL = act_on_plotArea rect_down
-    act_on_yR = act_on_plotArea rect_up
-    act_on_plotArea palens xMS = 
-        case reads (fromMisoString xMS) of
-            [(x,_)] -> NewPlotArea ((s ^. state_plotArea) & palens .~ (d2q x))
-            _ -> NoOp
+
 
 h,w :: Integer
 w = 800

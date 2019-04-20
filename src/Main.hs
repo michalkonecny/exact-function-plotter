@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 -- {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -38,7 +37,7 @@ import Miso.Svg as Svg
 import qualified Data.CDAR as CDAR
 -- import Data.CDAR (Dyadic)
 
-import Function
+import Expression
 
 type FnName = String
 
@@ -54,7 +53,7 @@ data State
   {
       _state_err :: Maybe String
     , _state_plotArea :: PlotArea
-    , _state_fn_exprs :: Map.Map FnName RF
+    , _state_fn_exprs :: Map.Map FnName RX
     , _state_fn_accuracy :: Map.Map FnName PlotAccuracy
     , _state_fn_workers :: Map.Map FnName ThreadId
     , _state_fn_encls :: Map.Map FnName PAEnclosure
@@ -68,7 +67,7 @@ state_err :: Lens' State (Maybe String)
 state_err wrap (State a b c d e f) = fmap (\a' -> State a' b c d e f) (wrap a)
 state_plotArea :: Lens' State PlotArea
 state_plotArea wrap (State a b c d e f) = fmap (\b' -> State a b' c d e f) (wrap b)
-state_fn_exprs :: Lens' State (Map.Map FnName RF)
+state_fn_exprs :: Lens' State (Map.Map FnName RX)
 state_fn_exprs wrap (State a b c d e f) = fmap (\c' -> State a b c' d e f) (wrap c)
 state_fn_accuracy :: Lens' State (Map.Map FnName PlotAccuracy)
 state_fn_accuracy wrap (State a b c d e f) = fmap (\d' -> State a b c d' e f) (wrap d)
@@ -177,7 +176,7 @@ data Action
   = NoOp
   | NoOpErr String
   | NewPlotArea !PlotArea
-  | NewFunction !(FnName, RF)
+  | NewFunction !(FnName, RX)
   | NewAccuracy !(FnName, PlotAccuracy)
   | NewWorker !(FnName, ThreadId)
   | NewEnclosureSegments !(FnName, Bool, PAEnclosure)
@@ -309,7 +308,7 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
     NoOp -> noEff s
 
 
-enclWorker :: Chan Action -> TVar PlotArea -> TVar PlotAccuracy -> String -> RF -> IO ()
+enclWorker :: Chan Action -> TVar PlotArea -> TVar PlotAccuracy -> String -> RX -> IO ()
 enclWorker actionChan plotAreaTV fnPlotAccuracyTV name rf =
   waitForAreaAndAct [] Nothing
   where
@@ -414,16 +413,16 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name rf =
           | yiDavg >= 0 = yiDavg `min` (((max 0 yiLDd) `min` (max 0 yiRDd)) * xiW)
           | otherwise = (-yiDavg) `min` (((max 0 (-yiLDd)) `min` (max 0 (-yiRDd))) * xiW)
         yiDavg = (q2d yiRL) - (q2d yiLL)
-        D (_ : yiLDd : _) = evalRF () rf (xD () ld)
-        D (_ : yiRDd : _) = evalRF () rf (xD () rd)
+        D (_ : yiLDd : _) = evalRX () rf (xD () ld)
+        D (_ : yiRDd : _) = evalRX () rf (xD () rd)
       enclosure1Tolerance _ = yWd
     encloseSegment (xiL, xiR) =
       (enclosure1, enclosure0)
       where
       xiM = (xiL + xiR)/2
-      yiM_A = evalRF (yPrec) rf (CDAR.toApprox (xPrec) xiM) 
+      yiM_A = evalRX (yPrec) rf (CDAR.toApprox (xPrec) xiM) 
       xi_A = (CDAR.toApprox (xPrec) xiL) `CDAR.unionA` (CDAR.toApprox xPrec xiR)
-      (D (yi_A : yid_A : _)) = evalRF (yPrec) rf (xD xPrec xi_A)
+      (D (yi_A : yid_A : _)) = evalRX (yPrec) rf (xD xPrec xi_A)
       enclosure1 =
         case (CDAR.lowerBound yiM_A, CDAR.upperBound yiM_A, CDAR.lowerBound yid_A, CDAR.upperBound yid_A) of
           (CDAR.Finite yiML_D, CDAR.Finite  yiMR_D, CDAR.Finite  yidL_D, CDAR.Finite  yidR_D) ->
@@ -527,7 +526,7 @@ viewFnControls fnname s@State{..} =
         Just fpac -> fpac
         _ -> defaultPlotAccuracy
     act_on_function fMS = 
-      case (parseRF $ fromMisoString fMS) of
+      case (parseRX $ fromMisoString fMS) of
         Right rf -> NewFunction (fnname, rf)
         Left _errmsg -> NoOp -- TODO
     act_on_targetYsegs = 

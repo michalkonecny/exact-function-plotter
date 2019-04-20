@@ -18,7 +18,7 @@ flag jsaddle
 executable function-plotter
     main-is: Main.hs
     other-modules:
-      Function
+      Expression
     build-depends:
         base < 5, 
         containers, time, mtl,

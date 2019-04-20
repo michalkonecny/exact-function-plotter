@@ -462,10 +462,8 @@ viewState s@State{..} =
     viewFnControls "f1" s
     ++ viewFnControls "f2" s
     ++ viewResult s
-    -- ++ [br_ [], text (ms $ show $ _state_plotArea)]
-    -- ++ [br_ [], text (ms $ show $ _state_plotArea_Movement)]
-    -- ++ [br_ [], text (ms $ show $ sum $ map (sum . map sumSegment) $ Map.elems $ s ^. state_fn_encls)]
-    -- ++ [br_ [], text $ ms $ show $ product [1..10000]]
+    -- ++ [br_ [], text (ms $ show $ _state_plotArea), br_ []]
+    -- ++ [br_ [], text (ms $ show $ _state_fn_accuracy), br_ []]
     ++
     [
       text "Plot area: " 
@@ -539,11 +537,11 @@ viewFnControls fnname s@State{..} =
       act_on_plotAccuracy plotAccuracy_minXSegments
     act_on_plotAccuracy paclens nMS = 
         case reads (fromMisoString nMS) of
-            [(n,_)] -> NewAccuracy (fnname, fpac)
+            [(n,_)] -> NewAccuracy (fnname, fpac & paclens .~ n)
                 where
                 fpac = 
                   case (s ^. state_fn_accuracy . at fnname) of
-                    Just fpac2 -> fpac2 & paclens .~ n
+                    Just fpac2 -> fpac2
                     _ ->  defaultPlotAccuracy
             _ -> NoOp
 

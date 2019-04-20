@@ -40,6 +40,8 @@ import qualified Data.CDAR as CDAR
 
 import Function
 
+type FnName = String
+
 {-
     A function is represented symbolically and rendered via a piece-wise affine enclosure.
     The direction of each segment is determined by an enclosure of the derivative
@@ -59,8 +61,6 @@ data State
     -- , _state_plotArea_Movement :: PlotAreaMovement
   }
   deriving (Show, Eq)
-
-type FnName = String
 
 -- makeLenses ''State
 
@@ -91,14 +91,14 @@ data PlotAccuracy =
 defaultPlotAccuracy :: PlotAccuracy
 defaultPlotAccuracy = PlotAccuracy 100 1024 8
 
-type PlotArea = Rectangle Rational
-
 plotAccuracy_targetYsegments :: Lens' PlotAccuracy Int
 plotAccuracy_targetYsegments wrap (PlotAccuracy a b c) = fmap (\a' -> PlotAccuracy a' b c) (wrap a)
 plotAccuracy_maxXSegments :: Lens' PlotAccuracy Int
 plotAccuracy_maxXSegments wrap (PlotAccuracy a b c) = fmap (\b' -> PlotAccuracy a b' c) (wrap b)
 plotAccuracy_minXSegments :: Lens' PlotAccuracy Int
 plotAccuracy_minXSegments wrap (PlotAccuracy a b c) = fmap (\c' -> PlotAccuracy a b c') (wrap c)
+
+type PlotArea = Rectangle Rational
 
 data Rectangle a = Rectangle
   {

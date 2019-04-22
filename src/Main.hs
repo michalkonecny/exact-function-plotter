@@ -16,15 +16,14 @@ import Control.Monad (void)
 import Control.Monad.IO.Class (liftIO)
 
 -- import Data.Time
-import Text.Printf
 
 import Control.Lens as Lens hiding (view)
 
 import Language.Javascript.JSaddle (runJSaddle)
 
--- import Text.Printf
+import Text.Printf
 
-import Data.List (intercalate)
+import Data.List (intercalate, find)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 -- import Data.Ratio ((%))
@@ -456,16 +455,32 @@ viewState s@State{..} =
     []
     ++ viewPlotAreaControls s
     ++ viewPlot s
+    ++ viewAddItem s
     ++ viewItemList s
-    ++ viewCurveControls "c" s
-    ++ viewFnControls "f1" s
-    ++ viewFnControls "f2" s
+    ++ viewSelectedItemControls s
     -- ++ [br_ [], text (ms $ show $ _state_plotArea), br_ []]
     -- ++ [br_ [], text (ms $ show $ _state_item_accuracies), br_ []]
 
 instance ToMisoString Rational where
   toMisoString q = s2ms $ printf "%.4f" (q2d q)
   fromMisoString _ = error "fromMisoString not defined for Rational"
+
+viewAddItem :: State -> [View Action]
+viewAddItem _s@State{..} =
+  [
+    text "Add item: "
+  , flip button_ [text "function"] [ onClick (NewPlotItem (fnName, (PlotItem_Function RXVarX)))]
+  , flip button_ [text "curve"] [ onClick (NewPlotItem (curveName, (PlotItem_Curve defaultCurve2D)))]
+  , br_ []
+  ]
+  where
+  itemNames = Map.keys _state_items
+  fnName = freshName "f"
+  curveName = freshName "c"
+  freshName prefix =
+    case find (not . flip elem itemNames) [ prefix ++ show (i :: Int) | i <- [1..] ] of
+      Just nm -> nm
+      _ -> error "failed to find a default function name"
 
 viewItemList :: State -> [View Action]
 viewItemList _s@State{..} =
@@ -484,6 +499,16 @@ viewItemList _s@State{..} =
       where
       isSelected = (_state_selectedItem == Just itemName)
       activeColor = Miso.style_ $ Map.singleton "background-color" "pink"
+
+viewSelectedItemControls :: State -> [View Action]
+viewSelectedItemControls s@State{..} =
+  case _state_selectedItem of
+    Just itemName -> 
+      case _state_items ^. at itemName of
+        Just (PlotItem_Function _) -> viewFnControls itemName s
+        Just (PlotItem_Curve _) -> viewCurveControls itemName s
+        _ -> []
+    _ -> []
 
 viewPlotAreaControls :: State -> [View Action]
 viewPlotAreaControls s@State{..} =

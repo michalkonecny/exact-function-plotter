@@ -1,7 +1,10 @@
+{-# OPTIONS_GHC -fno-warn-orphans  #-}
 -- {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 -- | Haskell module declaration
 module Main where
@@ -29,7 +32,7 @@ import Data.Maybe (catMaybes)
 -- | Miso framework import
 import qualified Miso
 import Miso hiding (at)
-import Miso.String (MisoString, ms, fromMisoString)
+import Miso.String (MisoString, ms, fromMisoString, ToMisoString(..))
 -- import Miso.Event.Types
 import Miso.Svg as Svg
 -- import Data.Aeson.Types
@@ -48,7 +51,7 @@ data PlotItem_Type =
 
 data PlotItem =
     PlotItem_Function RX
-  | PlotItem_Curve ParamCurve2D
+  | PlotItem_Curve Curve2D
   -- | PlotItem_Fractal LIFS_Fractal
   deriving (Show, Eq)
   
@@ -470,6 +473,10 @@ computeEnclosure plotItem plotArea plotAccuracy (xCL, xCR) =
   xPrec = 10 + (round $ negate $ logBase 2 (minSegSize))
   yPrec = 10 + (round $ negate $ logBase 2 (yTolerance))
 
+instance ToMisoString Rational where
+  toMisoString q = s2ms $ printf "%.4f" (q2d q)
+  fromMisoString _ = error "fromMisoString not defined for Rational"
+
 -- | Constructs a virtual DOM from a state
 viewState :: State -> View Action
 viewState s@State{..} = 
@@ -479,19 +486,20 @@ viewState s@State{..} =
     ] $ 
     viewFnControls "f1" s
     ++ viewFnControls "f2" s
+    ++ viewCurveControls "c" s
     ++ viewResult s
     -- ++ [br_ [], text (ms $ show $ _state_plotArea), br_ []]
     -- ++ [br_ [], text (ms $ show $ _state_item_accuracies), br_ []]
     ++
     [
       text "Plot area: " 
-    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_left _state_plotArea)), onChange act_on_xL ]
+    , input_ [ size_ "8", value_ (ms $ _rect_left _state_plotArea), onChange act_on_xL ]
     , text " <= x <= " 
-    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_right _state_plotArea)), onChange act_on_xR ]
+    , input_ [ size_ "8", value_ (ms $ _rect_right _state_plotArea), onChange act_on_xR ]
     , text " , " 
-    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_down _state_plotArea)), onChange act_on_yL ]
+    , input_ [ size_ "8", value_ (ms $ _rect_down _state_plotArea), onChange act_on_yL ]
     , text " <= y <= " 
-    , input_ [ size_ "8", value_ (s2ms $ printf "%.4f" (q2d $ _rect_up _state_plotArea)), onChange act_on_yR ]
+    , input_ [ size_ "8", value_ (ms $ _rect_up _state_plotArea), onChange act_on_yR ]
     , br_ []
     , text "Zoom "
     , button_ [ onClick (zoomi (-1)) ] [ text "-"]
@@ -531,9 +539,42 @@ viewFnControls itemName s@State{..} =
     ++ viewPlotAccuracy itemName s
     where
     act_on_function fMS = 
-      case (parseRX $ fromMisoString fMS) of
-        Right rf -> NewPlotItem (itemName, PlotItem_Function rf)
+      case (parseRX "x" $ fromMisoString fMS) of
+        Right rx -> NewPlotItem (itemName, PlotItem_Function rx)
         Left _errmsg -> NoOp -- TODO
+
+viewCurveControls :: ItemName -> State -> [View Action]
+viewCurveControls itemName s@State{..} =
+    [
+      text $ s2ms $ printf "Curve %s_x(t) = " itemName 
+    , input_ [ size_ "80", onChange $ act_on_x]
+    , br_ []
+    , text $ s2ms $ printf "Curve %s_y(t) = " itemName 
+    , input_ [ size_ "80", onChange $ act_on_y]
+    , br_ []
+    , input_ [ size_ "8", value_ (ms $ curve ^. curve2D_dom . _1), onChange $ act_on_t _1]
+    , text " <= t <= "
+    , input_ [ size_ "8", value_ (ms $ curve ^. curve2D_dom . _2), onChange $ act_on_t _2]
+    , br_ []
+    ]
+    ++ viewPlotAccuracy itemName s
+    where
+    curve = 
+      case _state_items ^. at itemName of
+        Just (PlotItem_Curve c) -> c
+        _ -> defaultCurve2D
+    act_on_x fMS = 
+      case (parseRX "t" $ fromMisoString fMS) of
+        Right rx -> NewPlotItem (itemName, PlotItem_Curve $ curve & curve2D_x .~ rx)
+        Left _errmsg -> NoOp -- TODO
+    act_on_y fMS = 
+      case (parseRX "t" $ fromMisoString fMS) of
+        Right rx -> NewPlotItem (itemName, PlotItem_Curve $ curve & curve2D_y .~ rx)
+        Left _errmsg -> NoOp -- TODO
+    act_on_t domlens tMS =
+      case reads (fromMisoString tMS) of
+        [(t,_)] -> NewPlotItem (itemName, PlotItem_Curve $ curve & curve2D_dom . domlens .~ (d2q t))
+        _ -> NoOp
 
 viewPlotAccuracy :: ItemName -> State -> [View Action]
 viewPlotAccuracy itemName s@State{..} =

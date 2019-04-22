@@ -66,7 +66,7 @@ data PlotItem =
 data State
   = State
   {
-      _state_err :: Maybe String
+      _state_selectedItem :: Maybe ItemName
     , _state_plotArea :: PlotArea
     , _state_items :: Map.Map ItemName PlotItem
     , _state_item_accuracies :: Map.Map ItemName PlotAccuracy
@@ -78,8 +78,8 @@ data State
 
 -- makeLenses ''State
 
-state_err :: Lens' State (Maybe String)
-state_err wrap (State a b c d e f) = fmap (\a' -> State a' b c d e f) (wrap a)
+state_selectedItem :: Lens' State (Maybe String)
+state_selectedItem wrap (State a b c d e f) = fmap (\a' -> State a' b c d e f) (wrap a)
 state_plotArea :: Lens' State PlotArea
 state_plotArea wrap (State a b c d e f) = fmap (\b' -> State a b' c d e f) (wrap b)
 state_items :: Lens' State (Map.Map ItemName PlotItem)
@@ -133,7 +133,7 @@ type PASegment = (Rectangle Rational, Rectangle Rational)
 
 data Action
   = NoOp
-  | NoOpErr String
+  | SelectItem (Maybe ItemName)
   | NewPlotArea !PlotArea
   | NewPlotItem !(ItemName, PlotItem)
   | NewAccuracy !(ItemName, PlotAccuracy)
@@ -263,7 +263,7 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
     --         in
     --         Rectangle (xL - xd) (xR - xd) (yL + yd) (yR + yd)
     --       _ -> extents
-    NoOpErr errMsg -> noEff $ s & state_err .~ (Just errMsg)
+    SelectItem maybeItemName -> noEff $ s & state_selectedItem .~ maybeItemName
     NoOp -> noEff s
 
 
@@ -456,6 +456,7 @@ viewState s@State{..} =
     []
     ++ viewPlotAreaControls s
     ++ viewPlot s
+    ++ viewItemList s
     ++ viewCurveControls "c" s
     ++ viewFnControls "f1" s
     ++ viewFnControls "f2" s
@@ -465,6 +466,24 @@ viewState s@State{..} =
 instance ToMisoString Rational where
   toMisoString q = s2ms $ printf "%.4f" (q2d q)
   fromMisoString _ = error "fromMisoString not defined for Rational"
+
+viewItemList :: State -> [View Action]
+viewItemList _s@State{..} =
+    [
+      text "Items: "
+    ]
+    ++ map viewItemButton itemNames
+    ++ [ br_ [] ]
+    where
+    itemNames = Map.keys _state_items
+    viewItemButton itemName 
+      | isSelected =
+        flip button_ [text (ms itemName)] [ Miso.width_ "50",  activeColor, onClick (SelectItem Nothing) ]
+      | otherwise =
+        flip button_ [text (ms itemName)]  [ Miso.width_ "50", onClick (SelectItem (Just itemName)) ]
+      where
+      isSelected = (_state_selectedItem == Just itemName)
+      activeColor = Miso.style_ $ Map.singleton "background-color" "pink"
 
 viewPlotAreaControls :: State -> [View Action]
 viewPlotAreaControls s@State{..} =
@@ -567,8 +586,6 @@ viewPlotAccuracy itemName s@State{..} =
     , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_minXSegments $ pac), onChange $ act_on_minXsegs ]
     , text " <= segments <= "
     , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_maxXSegments $ pac), onChange $ act_on_maxXsegs ]
-    , br_ []
-    , text (case _state_err of Nothing -> ""; Just msg -> (ms $ "Error: " ++ msg))
     , br_ []
     ]
     where
@@ -684,12 +701,18 @@ viewPlot State {..} =
       gran = 10.0 ^^ (round $ logBase 10 (q2d $ (yR - yL)/10) :: Int)
       y1 = gran * (fromInteger $ ceiling (yL / gran)) :: Rational
 
-    renderEnclosure (_fName, enclosure) =
+    renderEnclosure (itemName, enclosure) =
       map renderSegment enclosure
       where
       renderSegment (rect1, rect2) =
-        polygon_  [stroke_ "black", fill_ "pink", points_ pointsMS] []
+        polygon_  (points_ pointsMS : style) []
         where
+        style =
+          case _state_selectedItem of
+            Just selectedName | selectedName == itemName -> 
+              [stroke_ "black", fill_ "#ffc0cb"]
+            _ -> 
+              [stroke_ "#707070", fill_ "#ffe6ea"]
         pointsMS = ms $ intercalate " " $ map showPoint points
         showPoint (x,y) = showR x ++ "," ++ showR y
         showR :: Rational -> String

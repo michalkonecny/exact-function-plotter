@@ -473,24 +473,31 @@ computeEnclosure plotItem plotArea plotAccuracy (xCL, xCR) =
   xPrec = 10 + (round $ negate $ logBase 2 (minSegSize))
   yPrec = 10 + (round $ negate $ logBase 2 (yTolerance))
 
-instance ToMisoString Rational where
-  toMisoString q = s2ms $ printf "%.4f" (q2d q)
-  fromMisoString _ = error "fromMisoString not defined for Rational"
+---------------------------------------------------------------------------------
+--- VIEW
+---------------------------------------------------------------------------------
 
--- | Constructs a virtual DOM from a state
 viewState :: State -> View Action
 viewState s@State{..} = 
     div_ 
     [
       Miso.style_ (Map.singleton "font-size" "20pt")
-    ] $ 
-    viewFnControls "f1" s
+    ] $
+    [] 
+    ++ viewPlotAreaControls s
+    ++ viewResult s
+    ++ viewFnControls "f1" s
     ++ viewFnControls "f2" s
     ++ viewCurveControls "c" s
-    ++ viewResult s
     -- ++ [br_ [], text (ms $ show $ _state_plotArea), br_ []]
     -- ++ [br_ [], text (ms $ show $ _state_item_accuracies), br_ []]
-    ++
+
+instance ToMisoString Rational where
+  toMisoString q = s2ms $ printf "%.4f" (q2d q)
+  fromMisoString _ = error "fromMisoString not defined for Rational"
+
+viewPlotAreaControls :: State -> [View Action]
+viewPlotAreaControls s@State{..} =
     [
       text "Plot area: " 
     , input_ [ size_ "8", value_ (ms $ _rect_left _state_plotArea), onChange act_on_xL ]

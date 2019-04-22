@@ -31,8 +31,11 @@ import qualified Miso
 import Miso hiding (at)
 import Miso.String (MisoString, ms, fromMisoString)
 -- import Miso.Event.Types
-import Miso.Svg as Svg
+-- import Miso.Svg as Svg
 -- import Data.Aeson.Types
+
+-- Javascript Canvas
+import JavaScript.Web.Canvas as Canvas
 
 import qualified Data.CDAR as CDAR
 -- import Data.CDAR (Dyadic)
@@ -244,6 +247,7 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
         return NoOp
     (NewFunction (name, rf)) ->
       (s' <#) $ liftIO $ do
+        drawRect 0 0 10 100
         fnPlotAccuracyTV <- atomically $ do
           fnPlotAccuracyTV <- newTVar plotAccuracy
           paMap <- readTVar plotAccuracyTV
@@ -527,8 +531,8 @@ viewFnControls fnname s@State{..} =
         _ -> defaultPlotAccuracy
     act_on_function fMS = 
       case (parseRX $ fromMisoString fMS) of
-        Right rf -> NewFunction (fnname, rf)
-        Left _errmsg -> NoOp -- TODO
+        Prelude.Right rf -> NewFunction (fnname, rf)
+        Prelude.Left _errmsg -> NoOp -- TODO
     act_on_targetYsegs = 
       act_on_plotAccuracy plotAccuracy_targetYsegments
     act_on_maxXsegs = 
@@ -570,12 +574,15 @@ viewResult State {..} =
           -- , Miso.on "wheel" deltaYZoomDecoder id
           ]
           [
-            svg_ 
-              [ viewHeightAttr, viewWidthAttr
-              ] $
-                [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
-                ++ (concat $ map renderEnclosure $ Map.toList _state_fn_encls)
-                ++ concat xGuides ++ concat yGuides
+            canvas_ 
+              [ id_ "canvas",
+                width_ "800",
+                height_ "800",
+                Miso.style_ (Map.singleton "border" "1px solid black")
+                ] $ []
+                -- [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
+                -- ++ (concat $ map renderEnclosure $ Map.toList _state_fn_encls)
+                -- ++ concat xGuides ++ concat yGuides
           ]
     ]
     where
@@ -598,65 +605,71 @@ viewResult State {..} =
     --       case reads (fromMisoString s) of
     --         [(i,"")] -> Zoom (round (i :: Double))
     --         _ -> NoOp
-
-    viewHeightAttr = Svg.height_ (ms (q2d hQ))
-    viewWidthAttr = Svg.width_ (ms (q2d wQ))
-    Rectangle xL xR yL yR = _state_plotArea
+    -- viewHeightAttr = Svg.height_ (ms (q2d hQ))
+    -- viewWidthAttr = Svg.width_ (ms (q2d wQ))
+    -- Rectangle xL xR yL yR = _state_plotArea
     -- [xLd, xRd, yLd, yRd] = map q2d [xL, xR, yL, yR]
-    transformPt (x,y) = (transformX x, transformY y)
-    transformX x = (x-xL)*wQ/(xR-xL)
-    transformY y = hQ-(y-yL)*hQ/(yR-yL)
-    xGuides = 
-      [ let xiMS = ms (q2d $ transformX xi) in
-        [line_ 
-         [x1_ xiMS, x2_ xiMS, y1_ "0", y2_ (ms (q2d hQ)), 
-          stroke_ "black", strokeDasharray_ "1 3"
-         ] []
-         ,
-         text_ [x_ xiMS, y_ (ms (q2d hQ - 20))] [text (ms (q2d xi))]
-        ]
-      | xi <- xGuidePoints
-      ]
-      where
-      xGuidePoints = [x1, x1+gran .. xR]
-      gran = 10.0 ^^ (round $ logBase 10 (q2d $ (xR - xL)/10) :: Int)
-      x1 = gran * (fromInteger $ ceiling (xL / gran)) :: Rational
-    yGuides = 
-      [ let yiMS = ms (q2d $ transformY yi) in
-        [line_ 
-         [y1_ yiMS, y2_ yiMS, x1_ "0", x2_ (ms (q2d wQ)), 
-          stroke_ "black", strokeDasharray_ "1 3"
-         ] []
-         ,
-         text_ [y_ yiMS, x_ (ms (q2d wQ - 30))] [text (ms (q2d yi))]
-        ]
-      | yi <- yGuidePoints
-      ]
-      where
-      yGuidePoints = [y1, y1+gran .. yR]
-      gran = 10.0 ^^ (round $ logBase 10 (q2d $ (yR - yL)/10) :: Int)
-      y1 = gran * (fromInteger $ ceiling (yL / gran)) :: Rational
+    -- transformPt (x,y) = (transformX x, transformY y)
+    -- transformX x = (x-xL)*wQ/(xR-xL)
+    -- transformY y = hQ-(y-yL)*hQ/(yR-yL)
+    -- xGuides = 
+    --   [ let xiMS = ms (q2d $ transformX xi) in
+    --     [line_ 
+    --      [x1_ xiMS, x2_ xiMS, y1_ "0", y2_ (ms (q2d hQ)), 
+    --       stroke_ "black", strokeDasharray_ "1 3"
+    --      ] []
+    --      ,
+    --      text_ [x_ xiMS, y_ (ms (q2d hQ - 20))] [text (ms (q2d xi))]
+    --     ]
+    --   | xi <- xGuidePoints
+    --   ]
+    --   where
+    --   xGuidePoints = [x1, x1+gran .. xR]
+    --   gran = 10.0 ^^ (round $ logBase 10 (q2d $ (xR - xL)/10) :: Int)
+    --   x1 = gran * (fromInteger $ ceiling (xL / gran)) :: Rational
+    -- yGuides = 
+    --   [ let yiMS = ms (q2d $ transformY yi) in
+    --     [line_ 
+    --      [y1_ yiMS, y2_ yiMS, x1_ "0", x2_ (ms (q2d wQ)), 
+    --       stroke_ "black", strokeDasharray_ "1 3"
+    --      ] []
+    --      ,
+    --      text_ [y_ yiMS, x_ (ms (q2d wQ - 30))] [text (ms (q2d yi))]
+    --     ]
+    --   | yi <- yGuidePoints
+    --   ]
+    --   where
+    --   yGuidePoints = [y1, y1+gran .. yR]
+    --   gran = 10.0 ^^ (round $ logBase 10 (q2d $ (yR - yL)/10) :: Int)
+    --   y1 = gran * (fromInteger $ ceiling (yL / gran)) :: Rational
     
-    renderEnclosure (_fName, enclosure) =
-      map renderSegment enclosure
-      where
-      renderSegment (PAPoint lxL lxR lyL lyR, PAPoint rxL rxR ryL ryR) =
-        polygon_  [stroke_ "black", fill_ "pink", points_ pointsMS] []
-        where
-        pointsMS = ms $ intercalate " " $ map showPoint points
-        showPoint (x,y) = showR x ++ "," ++ showR y
-        showR :: Rational -> String
-        showR q = show $ (fromRational q :: Double)
-        points = 
-          map transformPt (pointsL ++ pointsR) 
-          where
-          pointsL
-            | lyL <= ryL = [(lxL,lyL), (lxR,lyL),(rxR, ryL)]
-            | otherwise = [(lxL,lyL), (rxL,ryL),(rxR, ryL)]
-          pointsR
-            | lyR <= ryR = [(rxR,ryR), (rxL,ryR),(lxL, lyR)]
-            | otherwise = [(rxR,ryR), (lxR,lyR),(lxL, lyR)]
+    -- renderEnclosure (_fName, enclosure) =
+    --   map renderSegment enclosure
+    --   where
+    --   renderSegment (PAPoint lxL lxR lyL lyR, PAPoint rxL rxR ryL ryR) =
+    --     polygon_  [stroke_ "black", fill_ "pink", points_ pointsMS] []
+    --     where
+    --     pointsMS = ms $ intercalate " " $ map showPoint points
+    --     showPoint (x,y) = showR x ++ "," ++ showR y
+    --     showR :: Rational -> String
+    --     showR q = show $ (fromRational q :: Double)
+    --     points = 
+    --       map transformPt (pointsL ++ pointsR) 
+    --       where
+    --       pointsL
+    --         | lyL <= ryL = [(lxL,lyL), (lxR,lyL),(rxR, ryL)]
+    --         | otherwise = [(lxL,lyL), (rxL,ryL),(rxR, ryL)]
+    --       pointsR
+    --         | lyR <= ryR = [(rxR,ryR), (rxL,ryR),(lxL, lyR)]
+    --         | otherwise = [(rxR,ryR), (lxR,lyR),(lxL, lyR)]
 
+drawRect :: Double -> Double -> Double -> Double -> IO ()
+drawRect x y xS yS = 
+  do
+  ctx <- getCtx
+  fillRect x y xS yS ctx
+  save ctx
+    
 
 q2d :: Rational -> Double
 q2d = fromRational
@@ -666,3 +679,9 @@ d2q = toRational
 
 s2ms :: String -> MisoString
 s2ms = ms
+
+foreign import javascript unsafe "$r = document.getElementById('canvas').getContext('2d');"
+  getCtx :: IO Canvas.Context
+
+foreign import javascript unsafe "$1.globalCompositeOperation = 'destination-over';"
+  setGlobalCompositeOperation :: Canvas.Context -> IO ()

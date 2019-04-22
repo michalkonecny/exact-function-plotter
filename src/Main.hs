@@ -187,7 +187,7 @@ data Action
   = NoOp
   | NoOpErr String
   | NewPlotArea !PlotArea
-  | NewFunction !(ItemName, RX)
+  | NewPlotItem !(ItemName, PlotItem)
   | NewAccuracy !(ItemName, PlotAccuracy)
   | NewWorker !(ItemName, ThreadId)
   | NewEnclosureSegments !(ItemName, Bool, PAEnclosure)
@@ -253,7 +253,7 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
             Just pacTV -> writeTVar pacTV pac
             _ -> pure ()
         return NoOp
-    (NewFunction (name, rf)) ->
+    (NewPlotItem (name, plotItem)) ->
       (s' <#) $ liftIO $ do
         fnPlotAccuracyTV <- atomically $ do
           fnPlotAccuracyTV <- newTVar plotAccuracy
@@ -268,7 +268,6 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
         -- register the worker thread:
         pure $ NewWorker (name, threadId) 
       where
-      plotItem = PlotItem_Function rf
       plotAccuracy =
         case s ^. state_item_accuracies . at name of
           Just pac -> pac
@@ -546,7 +545,7 @@ viewFnControls fnname s@State{..} =
         _ -> defaultPlotAccuracy
     act_on_function fMS = 
       case (parseRX $ fromMisoString fMS) of
-        Right rf -> NewFunction (fnname, rf)
+        Right rf -> NewPlotItem (fnname, PlotItem_Function rf)
         Left _errmsg -> NoOp -- TODO
     act_on_targetYsegs = 
       act_on_plotAccuracy plotAccuracy_targetYsegments

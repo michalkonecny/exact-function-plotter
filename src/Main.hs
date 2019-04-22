@@ -40,6 +40,7 @@ import Miso.Svg as Svg
 import qualified Data.CDAR as CDAR
 -- import Data.CDAR (Dyadic)
 
+import Rectangle
 import Expression
 import Curve
 
@@ -112,49 +113,6 @@ plotAccuracy_minXSegments :: Lens' PlotAccuracy Int
 plotAccuracy_minXSegments wrap (PlotAccuracy a b c) = fmap (\c' -> PlotAccuracy a b c') (wrap c)
 
 type PlotArea = Rectangle Rational
-
-data Rectangle a = Rectangle
-  {
-        _rect_left :: a
-    ,   _rect_right :: a
-    ,   _rect_down :: a
-    ,   _rect_up :: a
-  }
-  deriving (Show, Eq)
-
-rect_left :: Lens' (Rectangle a) a
-rect_left wrap (Rectangle a b c d) = fmap (\a' -> Rectangle a' b c d) (wrap a)
-rect_right :: Lens' (Rectangle a) a
-rect_right wrap (Rectangle a b c d) = fmap (\b' -> Rectangle a b' c d) (wrap b)
-rect_down :: Lens' (Rectangle a) a
-rect_down wrap (Rectangle a b c d) = fmap (\c' -> Rectangle a b c' d) (wrap c)
-rect_up :: Lens' (Rectangle a) a
-rect_up wrap (Rectangle a b c d) = fmap (\d' -> Rectangle a b c d') (wrap d)
-
-rect_zoom :: (Fractional a) => a -> Rectangle a -> Rectangle a
-rect_zoom ratio (Rectangle xL xR yL yR) = 
-  Rectangle (xM - xri) (xM + xri) (yM - yri) (yM + yri)
-  where
-  xM = (xL + xR)/2
-  yM = (yL + yR)/2
-  xr = (xR - xL)/2
-  yr = (yR - yL)/2
-  xri = xr * ratio
-  yri = yr * ratio
-
-rect_move :: (Fractional a) => (a,a) -> Rectangle a -> Rectangle a
-rect_move (xp,yp) (Rectangle xL xR yL yR) = 
-  Rectangle (xL + xd) (xR + xd) (yL + yd) (yR + yd)
-  where
-  xd = xp * (xR-xL)
-  yd = yp * (yR-yL)
-
-rect_isPanned :: (Eq a, Num a) => Rectangle a -> Rectangle a -> Bool
-rect_isPanned
-  (Rectangle l1 r1 d1 u1)
-  (Rectangle l2 r2 d2 u2) 
-  =
-  r1 - l1 == r2 - l2 && u1 - d1 == u2 - d2
 
 -- data PlotAreaMovement =
 --   PlotAreaMovement
@@ -745,11 +703,6 @@ viewResult State {..} =
           pointsR
             | lyR <= ryR = [(rxR,ryR), (rxL,ryR),(lxL, lyR)]
             | otherwise = [(rxR,ryR), (lxR,lyR),(lxL, lyR)]
-
--- hullTwoBoxes :: Rectangle Rational -> Rectangle Rational -> [(Rational, Rational)]
--- hullTwoBoxes (Rectangle xL1 xR1 yL1 yR1) (Rectangle xL2 xR2 yL2 yR2) =
---   undefined
---   where
 
 
 q2d :: Rational -> Double

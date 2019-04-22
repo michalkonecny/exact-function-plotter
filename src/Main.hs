@@ -384,7 +384,7 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
     enclosure = computeEnclosure plotItem plotArea plotAccuracy dom
 
 computeEnclosure :: PlotItem -> PlotArea -> PlotAccuracy -> (Rational, Rational) -> PAEnclosure
-computeEnclosure plotItem plotArea plotAccuracy (xCL, xCR) =
+computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
   enclosure
   where
   Rectangle xL xR yL yR = plotArea
@@ -401,16 +401,16 @@ computeEnclosure plotItem plotArea plotAccuracy (xCL, xCR) =
   maxSegSize = xWd/xMinNd
   minSegSize = xWd/xMaxNd
   yTolerance = yWd/yNd
-  enclosure = aseg xCL xCR
-  (PlotItem_Function rf) = plotItem -- TODO
+  enclosure = aseg tL tR
+  (PlotItem_Function rx) = plotItem -- TODO
   aseg l r 
     | rd - ld > maxSegSize = asegDivision
     | rd - ld < 2 * minSegSize = 
         catMaybes [lrEnclosure0]
         -- catMaybes [lrEnclosureBest]
-    | tol0 <= yTolerance = 
+    | w0 <= yTolerance = 
         catMaybes [lrEnclosure0]
-    | tol1 <= yTolerance = 
+    | w1 <= yTolerance = 
         catMaybes [lrEnclosure1]
     | otherwise = asegDivision
     where
@@ -418,13 +418,13 @@ computeEnclosure plotItem plotArea plotAccuracy (xCL, xCR) =
     rd = q2d r
     asegDivision = aseg l m ++ aseg m r
       where m = (l+r)/2
-    (lrEnclosure1, lrEnclosure0) = encloseSegment (l,r)
-    tol0 = enclosure0Tolerance lrEnclosure0
-    enclosure0Tolerance (Just (_, PAPoint _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
-    enclosure0Tolerance _ = yWd
-    tol1 = enclosure1Tolerance lrEnclosure1
+    (lrEnclosure1, lrEnclosure0) = encloseSegment rx (l,r)
+    w0 = enclosure0Width lrEnclosure0
+    enclosure0Width (Just (_, PAPoint _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
+    enclosure0Width _ = yWd
+    w1 = enclosure1Width rx lrEnclosure1
     -- tol1Vert = enclosure1VertTolerance lrEnclosure1
-    enclosure1Tolerance (Just (PAPoint xiL _ yiLL _yiLR, PAPoint xiR _ yiRL yiRR)) =
+    enclosure1Width rx (Just (PAPoint xiL _ yiLL _yiLR, PAPoint xiR _ yiRL yiRR)) =
       xiW * yiW / (sqrt $ xiW^(2::Int) + yiD2^(2::Int))
       where
       yiW = (q2d yiRR) - (q2d yiRL)
@@ -434,16 +434,16 @@ computeEnclosure plotItem plotArea plotAccuracy (xCL, xCR) =
         | yiDavg >= 0 = yiDavg `min` (((max 0 yiLDd) `min` (max 0 yiRDd)) * xiW)
         | otherwise = (-yiDavg) `min` (((max 0 (-yiLDd)) `min` (max 0 (-yiRDd))) * xiW)
       yiDavg = (q2d yiRL) - (q2d yiLL)
-      D (_ : yiLDd : _) = evalRX () rf (xD () ld)
-      D (_ : yiRDd : _) = evalRX () rf (xD () rd)
-    enclosure1Tolerance _ = yWd
-  encloseSegment (xiL, xiR) =
+      D (_ : yiLDd : _) = evalRX () rx (xD () ld)
+      D (_ : yiRDd : _) = evalRX () rx (xD () rd)
+    enclosure1Width _ _ = yWd
+  encloseSegment rx (xiL, xiR) =
     (enclosure1, enclosure0)
     where
     xiM = (xiL + xiR)/2
-    yiM_A = evalRX (yPrec) rf (CDAR.toApprox (xPrec) xiM) 
+    yiM_A = evalRX (yPrec) rx (CDAR.toApprox (xPrec) xiM) 
     xi_A = (CDAR.toApprox (xPrec) xiL) `CDAR.unionA` (CDAR.toApprox xPrec xiR)
-    (D (yi_A : yid_A : _)) = evalRX (yPrec) rf (xD xPrec xi_A)
+    (D (yi_A : yid_A : _)) = evalRX (yPrec) rx (xD xPrec xi_A)
     enclosure1 =
       case (CDAR.lowerBound yiM_A, CDAR.upperBound yiM_A, CDAR.lowerBound yid_A, CDAR.upperBound yid_A) of
         (CDAR.Finite yiML_D, CDAR.Finite  yiMR_D, CDAR.Finite  yidL_D, CDAR.Finite  yidR_D) ->
@@ -486,9 +486,9 @@ viewState s@State{..} =
     [] 
     ++ viewPlotAreaControls s
     ++ viewResult s
+    ++ viewCurveControls "c" s
     ++ viewFnControls "f1" s
     ++ viewFnControls "f2" s
-    ++ viewCurveControls "c" s
     -- ++ [br_ [], text (ms $ show $ _state_plotArea), br_ []]
     -- ++ [br_ [], text (ms $ show $ _state_item_accuracies), br_ []]
 

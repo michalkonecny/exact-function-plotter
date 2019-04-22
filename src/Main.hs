@@ -671,7 +671,7 @@ viewPlot State {..} =
               [ viewHeightAttr, viewWidthAttr
               ] $
                 [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
-                ++ (concat $ map renderEnclosure $ Map.toList _state_item_encls)
+                ++ (concat $ map renderEnclosure $ moveSelectedLast $ Map.toList _state_item_encls)
                 ++ concat xGuides ++ concat yGuides
           ]
     ]
@@ -695,6 +695,16 @@ viewPlot State {..} =
     --       case reads (fromMisoString s) of
     --         [(i,"")] -> Zoom (round (i :: Double))
     --         _ -> NoOp
+
+    moveSelectedLast = aux Nothing
+      where
+      aux (Just sel) [] = [sel]
+      aux _ [] = []
+      aux msel (this@(itemName, _):rest)
+        |  _state_selectedItem == Just itemName =
+          aux (Just this) rest
+        | otherwise =
+          this : aux msel rest
 
     viewHeightAttr = Svg.height_ (ms (q2d hQ))
     viewWidthAttr = Svg.width_ (ms (q2d wQ))
@@ -743,9 +753,9 @@ viewPlot State {..} =
         style =
           case _state_selectedItem of
             Just selectedName | selectedName == itemName -> 
-              [stroke_ "black", fill_ "#ffc0cb"]
+              [stroke_ "black", fill_ "#ffc0cb", fillOpacity_ "0.7"]
             _ -> 
-              [stroke_ "#707070", fill_ "#ffe6ea"]
+              [stroke_ "#707070", fill_ "#ffc0cb", fillOpacity_ "0.4"]
         pointsMS = ms $ intercalate " " $ map showPoint points
         showPoint (x,y) = showR x ++ "," ++ showR y
         showR :: Rational -> String

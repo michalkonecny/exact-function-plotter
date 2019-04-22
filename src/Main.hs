@@ -55,7 +55,7 @@ data PlotItem =
   | PlotItem_Curve Curve2D
   -- | PlotItem_Fractal LIFS_Fractal
   deriving (Show, Eq)
-  
+
 {-
     A function is represented symbolically and rendered via a piece-wise affine enclosure.
     The direction of each segment is determined by an enclosure of the derivative
@@ -64,7 +64,7 @@ data PlotItem =
     We cache the enclosure and recompute it asynchronously after each pan/zoom.
 -}
 data State
-  = State 
+  = State
   {
       _state_err :: Maybe String
     , _state_plotArea :: PlotArea
@@ -93,7 +93,7 @@ state_item_encls wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wr
 -- state_plotArea_Movement :: Lens' State PlotAreaMovement
 -- state_plotArea_Movement wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
 
-data PlotAccuracy = 
+data PlotAccuracy =
   PlotAccuracy
   {
     _plotAccuracy_targetYSegments :: Int
@@ -151,7 +151,7 @@ main = do
   plotAccuracyTV <- atomically $ newTVar Map.empty
   continueWithVars actionChan plotAreaTV plotAccuracyTV
   where
-  initialPlotArea = 
+  initialPlotArea =
     Rectangle (-1) 1 (-1) 1
       -- initialTargetYSegments
       -- initialMaxXSegments
@@ -166,7 +166,7 @@ main = do
     update = flip $ updateState actionChan plotAreaTV plotAccuracyTV
     view   = viewState
     events = defaultEvents
-    subs   = [actionSub actionChan] 
+    subs   = [actionSub actionChan]
     mountPoint = Nothing -- mount point for application (Nothing defaults to 'body')
 
 initialTargetYSegments :: Int
@@ -214,24 +214,24 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
         -- start new worker thread:
         threadId <- forkIO $ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem
         -- register the worker thread:
-        pure $ NewWorker (name, threadId) 
+        pure $ NewWorker (name, threadId)
       where
       plotAccuracy =
         case s ^. state_item_accuracies . at name of
           Just pac -> pac
           _ -> defaultPlotAccuracy
       s' =
-        s & state_items . at name .~ Just plotItem 
+        s & state_items . at name .~ Just plotItem
           & state_item_accuracies . at name .~ Just plotAccuracy
           & state_item_workers . at name .~ Nothing
           & state_item_encls . at name .~ Nothing
     (NewWorker (name, tid)) ->
       noEff $ s & state_item_workers . at name .~ Just tid
     (NewEnclosureSegments (name, shouldAppend, encl)) ->
-      noEff $ 
+      noEff $
         s & state_item_encls . at name %~ addEncl
       where
-      addEncl (Just oldEncl) 
+      addEncl (Just oldEncl)
         | shouldAppend = Just $ oldEncl ++ encl
       addEncl _ = Just encl
     -- SetDrag isDrag ->
@@ -282,7 +282,7 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
         Nothing -> pure (pa, pac, False)
         Just (_, oldpa, oldpac) ->
           if oldpa == pa && oldpac == pac then retry
-          else 
+          else
             pure (pa, pac, oldpac == pac && rect_isPanned oldpa pa)
     -- if resetting, kill any potentially active threads:
     case isPanned of
@@ -295,7 +295,7 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
           pure $ if isPanned then (Nothing, dom) else (Just dom, dom)
         (PlotItem_Function _, Just (odomC, _, _)) | isPanned ->
           pure (get_xC_x odomC plotArea)
-        _ -> 
+        _ ->
           pure (Just xP, xP)
             where
             xP = plotArea_x plotArea
@@ -307,7 +307,7 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
         case isPanned of
           True -> waitForAreaAndAct (threadId : threadIds) (Just (dom, plotArea, plotAccuracy))
           _    -> waitForAreaAndAct [threadId] (Just (dom, plotArea, plotAccuracy))
-      _ -> 
+      _ ->
         waitForAreaAndAct threadIds maybePrevCompInfo -- ie do nothing this time
     where
     get_xC_x (oxCL, oxCR) pa
@@ -324,7 +324,7 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
       (Rectangle xL xR _ _) = pa
 
   sendNewEnclosureSegments isPanned plotArea plotAccuracy dom =
-    writeChan actionChan 
+    writeChan actionChan
       (NewEnclosureSegments (name, shouldAppend, enclosure))
     where
     shouldAppend = isPanned
@@ -350,14 +350,14 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
   yTolerance = yWd/yNd
   xTolerance = xWd/yNd
   enclosure = aseg tL tR
-  aseg l r 
+  aseg l r
     | rd - ld > maxSegSize = asegDivision
-    | rd - ld < 2 * minSegSize = 
+    | rd - ld < 2 * minSegSize =
         catMaybes [lrEnclosure0]
         -- catMaybes [lrEnclosureBest]
-    | good0 = 
+    | good0 =
         catMaybes [lrEnclosure0]
-    | good1 = 
+    | good1 =
         catMaybes [lrEnclosure1]
     | otherwise = asegDivision
     where
@@ -365,7 +365,7 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
     rd = q2d r
     asegDivision = aseg l m ++ aseg m r
       where m = (l+r)/2
-    (lrEnclosure0, good0, lrEnclosure1, good1) = 
+    (lrEnclosure0, good0, lrEnclosure1, good1) =
       case plotItem of
         (PlotItem_Function rx) ->
           (e0, w0 <= yTolerance, e1, w1 <= yTolerance)
@@ -386,7 +386,7 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
           w0y = enclosure0Width e0y
           w1x = enclosure1Width rx_x e1x
           w1y = enclosure1Width rx_y e1y
-          combine_exy 
+          combine_exy
             (Just (Rectangle _ _ xiLL xiLR, Rectangle _ _ xiRL xiRR))
             (Just (Rectangle _ _ yiLL yiLR, Rectangle _ _ yiRL yiRR)) =
             Just (Rectangle xiLL xiLR yiLL yiLR, Rectangle xiRL xiRR yiRL yiRR)
@@ -411,16 +411,16 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
     (enclosure1, enclosure0)
     where
     xiM = (xiL + xiR)/2
-    yiM_A = evalRX (yPrec) rx (CDAR.toApprox (xPrec) xiM) 
+    yiM_A = evalRX (yPrec) rx (CDAR.toApprox (xPrec) xiM)
     xi_A = (CDAR.toApprox (xPrec) xiL) `CDAR.unionA` (CDAR.toApprox xPrec xiR)
     (D (yi_A : yid_A : _)) = evalRX (yPrec) rx (xD xPrec xi_A)
     enclosure1 =
       case (CDAR.lowerBound yiM_A, CDAR.upperBound yiM_A, CDAR.lowerBound yid_A, CDAR.upperBound yid_A) of
         (CDAR.Finite yiML_D, CDAR.Finite  yiMR_D, CDAR.Finite  yidL_D, CDAR.Finite  yidR_D) ->
           let
-            yiML = toRational yiML_D 
-            yiMR = toRational yiMR_D 
-            yidL = toRational yidL_D 
+            yiML = toRational yiML_D
+            yiMR = toRational yiMR_D
+            yidL = toRational yidL_D
             yidR = toRational yidR_D
             rad = (xiR - xiL)/2
             yiLL = yiML - rad*yidR
@@ -434,8 +434,8 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
       case (CDAR.lowerBound yi_A, CDAR.upperBound yi_A) of
         (CDAR.Finite yiL_D, CDAR.Finite yiR_D) ->
           let
-            yiL = toRational yiL_D 
-            yiR = toRational yiR_D 
+            yiL = toRational yiL_D
+            yiR = toRational yiR_D
           in
           Just (Rectangle xiL xiL yiL yiR, Rectangle xiR xiR yiL yiR)
         _ -> Nothing
@@ -448,14 +448,14 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
 ---------------------------------------------------------------------------------
 
 viewState :: State -> View Action
-viewState s@State{..} = 
-    div_ 
+viewState s@State{..} =
+    div_
     [
       Miso.style_ (Map.singleton "font-size" "20pt")
     ] $
-    [] 
+    []
     ++ viewPlotAreaControls s
-    ++ viewResult s
+    ++ viewPlot s
     ++ viewCurveControls "c" s
     ++ viewFnControls "f1" s
     ++ viewFnControls "f2" s
@@ -469,13 +469,13 @@ instance ToMisoString Rational where
 viewPlotAreaControls :: State -> [View Action]
 viewPlotAreaControls s@State{..} =
     [
-      text "Plot area: " 
+      text "Plot area: "
     , input_ [ size_ "8", value_ (ms $ _rect_left _state_plotArea), onChange act_on_xL ]
-    , text " <= x <= " 
+    , text " <= x <= "
     , input_ [ size_ "8", value_ (ms $ _rect_right _state_plotArea), onChange act_on_xR ]
-    , text " , " 
+    , text " , "
     , input_ [ size_ "8", value_ (ms $ _rect_down _state_plotArea), onChange act_on_yL ]
-    , text " <= y <= " 
+    , text " <= y <= "
     , input_ [ size_ "8", value_ (ms $ _rect_up _state_plotArea), onChange act_on_yR ]
     , br_ []
     , text "Zoom "
@@ -493,7 +493,7 @@ viewPlotAreaControls s@State{..} =
     act_on_xR = act_on_plotArea rect_right
     act_on_yL = act_on_plotArea rect_down
     act_on_yR = act_on_plotArea rect_up
-    act_on_plotArea palens xMS = 
+    act_on_plotArea palens xMS =
         case reads (fromMisoString xMS) of
             [(x,_)] -> NewPlotArea ((s ^. state_plotArea) & palens .~ (d2q x))
             _ -> NoOp
@@ -509,17 +509,17 @@ viewPlotAreaControls s@State{..} =
 viewFnControls :: ItemName -> State -> [View Action]
 viewFnControls itemName s@State{..} =
     [
-      text $ s2ms $ printf "Function %s(x) = " itemName 
+      text $ s2ms $ printf "Function %s(x) = " itemName
     , input_ [ size_ "80", value_ (ms $ showRX "x" rx), onChange $ act_on_function]
     , br_ []
     ]
     ++ viewPlotAccuracy itemName s
     where
-    rx = 
+    rx =
       case _state_items ^. at itemName of
         Just (PlotItem_Function rx2) -> rx2
         _ -> RXVarX
-    act_on_function fMS = 
+    act_on_function fMS =
       case (parseRX "x" $ fromMisoString fMS) of
         Right rx2 -> NewPlotItem (itemName, PlotItem_Function rx2)
         Left _errmsg -> NoOp -- TODO
@@ -527,10 +527,10 @@ viewFnControls itemName s@State{..} =
 viewCurveControls :: ItemName -> State -> [View Action]
 viewCurveControls itemName s@State{..} =
     [
-      text $ s2ms $ printf "Curve %s_x(t) = " itemName 
+      text $ s2ms $ printf "Curve %s_x(t) = " itemName
     , input_ [ size_ "80", value_ (ms $ showRX "t" $ curve ^. curve2D_x), onChange $ act_on_x]
     , br_ []
-    , text $ s2ms $ printf "Curve %s_y(t) = " itemName 
+    , text $ s2ms $ printf "Curve %s_y(t) = " itemName
     , input_ [ size_ "80", value_ (ms $ showRX "t" $ curve ^. curve2D_y), onChange $ act_on_y]
     , br_ []
     , input_ [ size_ "8", value_ (ms $ curve ^. curve2D_dom . _1), onChange $ act_on_t _1]
@@ -540,15 +540,15 @@ viewCurveControls itemName s@State{..} =
     ]
     ++ viewPlotAccuracy itemName s
     where
-    curve = 
+    curve =
       case _state_items ^. at itemName of
         Just (PlotItem_Curve c) -> c
         _ -> defaultCurve2D
-    act_on_x fMS = 
+    act_on_x fMS =
       case (parseRX "t" $ fromMisoString fMS) of
         Right rx -> NewPlotItem (itemName, PlotItem_Curve $ curve & curve2D_x .~ rx)
         Left _errmsg -> NoOp -- TODO
-    act_on_y fMS = 
+    act_on_y fMS =
       case (parseRX "t" $ fromMisoString fMS) of
         Right rx -> NewPlotItem (itemName, PlotItem_Curve $ curve & curve2D_y .~ rx)
         Left _errmsg -> NoOp -- TODO
@@ -563,30 +563,30 @@ viewPlotAccuracy itemName s@State{..} =
       text $ s2ms $ printf "%s(x) accuracy ~ w/" itemName
     , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_targetYSegments $ pac), onChange $ act_on_targetYsegs ]
     -- , br_ []
-    , text "  " 
+    , text "  "
     , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_minXSegments $ pac), onChange $ act_on_minXsegs ]
-    , text " <= segments <= " 
+    , text " <= segments <= "
     , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_maxXSegments $ pac), onChange $ act_on_maxXsegs ]
     , br_ []
-    , text (case _state_err of Nothing -> ""; Just msg -> (ms $ "Error: " ++ msg)) 
+    , text (case _state_err of Nothing -> ""; Just msg -> (ms $ "Error: " ++ msg))
     , br_ []
     ]
     where
-    pac = 
+    pac =
       case s ^. state_item_accuracies . at itemName of
         Just fpac -> fpac
         _ -> defaultPlotAccuracy
-    act_on_targetYsegs = 
+    act_on_targetYsegs =
       act_on_plotAccuracy plotAccuracy_targetYsegments
-    act_on_maxXsegs = 
+    act_on_maxXsegs =
       act_on_plotAccuracy plotAccuracy_maxXSegments
-    act_on_minXsegs = 
+    act_on_minXsegs =
       act_on_plotAccuracy plotAccuracy_minXSegments
-    act_on_plotAccuracy paclens nMS = 
+    act_on_plotAccuracy paclens nMS =
         case reads (fromMisoString nMS) of
             [(n,_)] -> NewAccuracy (itemName, fpac & paclens .~ n)
                 where
-                fpac = 
+                fpac =
                   case (s ^. state_item_accuracies . at itemName) of
                     Just fpac2 -> fpac2
                     _ ->  defaultPlotAccuracy
@@ -601,11 +601,11 @@ hQ, wQ :: Rational
 hQ = toRational h
 wQ = toRational w
 
-viewResult :: State -> [View Action]
-viewResult State {..} =
+viewPlot :: State -> [View Action]
+viewPlot State {..} =
     [
         -- text (ms transformS),
-        div_ 
+        div_
           [
             Miso.style_ (Map.singleton "font-size" "12pt")
           --   Miso.style_ (Map.singleton "user-select" "none")
@@ -617,7 +617,7 @@ viewResult State {..} =
           -- , Miso.on "wheel" deltaYZoomDecoder id
           ]
           [
-            svg_ 
+            svg_
               [ viewHeightAttr, viewWidthAttr
               ] $
                 [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
@@ -653,10 +653,10 @@ viewResult State {..} =
     transformPt (x,y) = (transformX x, transformY y)
     transformX x = (x-xL)*wQ/(xR-xL)
     transformY y = hQ-(y-yL)*hQ/(yR-yL)
-    xGuides = 
+    xGuides =
       [ let xiMS = ms (q2d $ transformX xi) in
-        [line_ 
-         [x1_ xiMS, x2_ xiMS, y1_ "0", y2_ (ms (q2d hQ)), 
+        [line_
+         [x1_ xiMS, x2_ xiMS, y1_ "0", y2_ (ms (q2d hQ)),
           stroke_ "black", strokeDasharray_ "1 3"
          ] []
          ,
@@ -668,10 +668,10 @@ viewResult State {..} =
       xGuidePoints = [x1, x1+gran .. xR]
       gran = 10.0 ^^ (round $ logBase 10 (q2d $ (xR - xL)/10) :: Int)
       x1 = gran * (fromInteger $ ceiling (xL / gran)) :: Rational
-    yGuides = 
+    yGuides =
       [ let yiMS = ms (q2d $ transformY yi) in
-        [line_ 
-         [y1_ yiMS, y2_ yiMS, x1_ "0", x2_ (ms (q2d wQ)), 
+        [line_
+         [y1_ yiMS, y2_ yiMS, x1_ "0", x2_ (ms (q2d wQ)),
           stroke_ "black", strokeDasharray_ "1 3"
          ] []
          ,
@@ -683,7 +683,7 @@ viewResult State {..} =
       yGuidePoints = [y1, y1+gran .. yR]
       gran = 10.0 ^^ (round $ logBase 10 (q2d $ (yR - yL)/10) :: Int)
       y1 = gran * (fromInteger $ ceiling (yL / gran)) :: Rational
-    
+
     renderEnclosure (_fName, enclosure) =
       map renderSegment enclosure
       where

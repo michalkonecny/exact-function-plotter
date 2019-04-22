@@ -344,22 +344,24 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
       False -> mapM_ killThread threadIds
       _ -> pure ()
     -- work over which interval to compute, if at all:
-    (mxC, x) <-
-      case maybePrevCompInfo of
-        Just (oxC, _, _) | isPanned ->
-          pure (get_xC_x oxC plotArea)
+    (mdomC, dom) <-
+      case (plotItem, maybePrevCompInfo) of
+        (PlotItem_Curve (Curve2D dom _ _), _) ->
+          pure $ if isPanned then (Nothing, dom) else (Just dom, dom)
+        (PlotItem_Function _, Just (odomC, _, _)) | isPanned ->
+          pure (get_xC_x odomC plotArea)
         _ -> 
           pure (Just xP, xP)
             where
             xP = plotArea_x plotArea
     -- start a new enclosure computation thread (if needed) and recurse:
-    case mxC of
-      Just xC ->
+    case mdomC of
+      Just domC ->
         do
-        threadId <- forkIO $ sendNewEnclosureSegments isPanned plotArea plotAccuracy xC
+        threadId <- forkIO $ sendNewEnclosureSegments isPanned plotArea plotAccuracy domC
         case isPanned of
-          True -> waitForAreaAndAct (threadId : threadIds) (Just (x, plotArea, plotAccuracy))
-          _    -> waitForAreaAndAct [threadId] (Just (x, plotArea, plotAccuracy))
+          True -> waitForAreaAndAct (threadId : threadIds) (Just (dom, plotArea, plotAccuracy))
+          _    -> waitForAreaAndAct [threadId] (Just (dom, plotArea, plotAccuracy))
       _ -> 
         waitForAreaAndAct threadIds maybePrevCompInfo -- ie do nothing this time
     where
@@ -401,16 +403,16 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
   maxSegSize = xWd/xMinNd
   minSegSize = xWd/xMaxNd
   yTolerance = yWd/yNd
+  xTolerance = xWd/yNd
   enclosure = aseg tL tR
-  (PlotItem_Function rx) = plotItem -- TODO
   aseg l r 
     | rd - ld > maxSegSize = asegDivision
     | rd - ld < 2 * minSegSize = 
         catMaybes [lrEnclosure0]
         -- catMaybes [lrEnclosureBest]
-    | w0 <= yTolerance = 
+    | good0 = 
         catMaybes [lrEnclosure0]
-    | w1 <= yTolerance = 
+    | good1 = 
         catMaybes [lrEnclosure1]
     | otherwise = asegDivision
     where
@@ -418,11 +420,34 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
     rd = q2d r
     asegDivision = aseg l m ++ aseg m r
       where m = (l+r)/2
-    (lrEnclosure1, lrEnclosure0) = encloseSegment rx (l,r)
-    w0 = enclosure0Width lrEnclosure0
+    (lrEnclosure0, good0, lrEnclosure1, good1) = 
+      case plotItem of
+        (PlotItem_Function rx) ->
+          (e0, w0 <= yTolerance, e1, w1 <= yTolerance)
+          where
+          (e1, e0) = encloseSegment rx (l,r)
+          w0 = enclosure0Width e0
+          w1 = enclosure1Width rx e1
+        (PlotItem_Curve (Curve2D _dom rx_x rx_y)) ->
+          (e0, g0, e1, g1)
+          where
+          e0 = combine_exy e0x e0y
+          e1 = combine_exy e1x e1y
+          g0 = w0x <= xTolerance && w0y <= yTolerance
+          g1 = w1x <= xTolerance && w1y <= yTolerance
+          (e1x, e0x) = encloseSegment rx_x (l,r)
+          (e1y, e0y) = encloseSegment rx_y (l,r)
+          w0x = enclosure0Width e0x
+          w0y = enclosure0Width e0y
+          w1x = enclosure1Width rx_x e1x
+          w1y = enclosure1Width rx_y e1y
+          combine_exy 
+            (Just (PAPoint _ _ xiLL xiLR, PAPoint _ _ xiRL xiRR))
+            (Just (PAPoint _ _ yiLL yiLR, PAPoint _ _ yiRL yiRR)) =
+            Just (PAPoint xiLL xiLR yiLL yiLR, PAPoint xiRL xiRR yiRL yiRR)
+          combine_exy _ _ = Nothing
     enclosure0Width (Just (_, PAPoint _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
     enclosure0Width _ = yWd
-    w1 = enclosure1Width rx lrEnclosure1
     -- tol1Vert = enclosure1VertTolerance lrEnclosure1
     enclosure1Width rx (Just (PAPoint xiL _ yiLL _yiLR, PAPoint xiR _ yiRL yiRR)) =
       xiW * yiW / (sqrt $ xiW^(2::Int) + yiD2^(2::Int))

@@ -533,24 +533,28 @@ viewFnControls :: ItemName -> State -> [View Action]
 viewFnControls itemName s@State{..} =
     [
       text $ s2ms $ printf "Function %s(x) = " itemName 
-    , input_ [ size_ "80", onChange $ act_on_function]
+    , input_ [ size_ "80", value_ (ms $ showRX "x" rx), onChange $ act_on_function]
     , br_ []
     ]
     ++ viewPlotAccuracy itemName s
     where
+    rx = 
+      case _state_items ^. at itemName of
+        Just (PlotItem_Function rx2) -> rx2
+        _ -> RXVarX
     act_on_function fMS = 
       case (parseRX "x" $ fromMisoString fMS) of
-        Right rx -> NewPlotItem (itemName, PlotItem_Function rx)
+        Right rx2 -> NewPlotItem (itemName, PlotItem_Function rx2)
         Left _errmsg -> NoOp -- TODO
 
 viewCurveControls :: ItemName -> State -> [View Action]
 viewCurveControls itemName s@State{..} =
     [
       text $ s2ms $ printf "Curve %s_x(t) = " itemName 
-    , input_ [ size_ "80", onChange $ act_on_x]
+    , input_ [ size_ "80", value_ (ms $ showRX "t" $ curve ^. curve2D_x), onChange $ act_on_x]
     , br_ []
     , text $ s2ms $ printf "Curve %s_y(t) = " itemName 
-    , input_ [ size_ "80", onChange $ act_on_y]
+    , input_ [ size_ "80", value_ (ms $ showRX "t" $ curve ^. curve2D_y), onChange $ act_on_y]
     , br_ []
     , input_ [ size_ "8", value_ (ms $ curve ^. curve2D_dom . _1), onChange $ act_on_t _1]
     , text " <= t <= "

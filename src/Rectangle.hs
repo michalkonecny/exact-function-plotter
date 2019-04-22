@@ -35,22 +35,22 @@ rect_up :: Lens' (Rectangle a) a
 rect_up wrap (Rectangle a b c d) = fmap (\d' -> Rectangle a b c d') (wrap d)
 
 rect_zoom :: (Fractional a) => a -> Rectangle a -> Rectangle a
-rect_zoom ratio (Rectangle xL xR yL yR) = 
+rect_zoom ratio (Rectangle l r d u) = 
   Rectangle (xM - xri) (xM + xri) (yM - yri) (yM + yri)
   where
-  xM = (xL + xR)/2
-  yM = (yL + yR)/2
-  xr = (xR - xL)/2
-  yr = (yR - yL)/2
+  xM = (l + r)/2
+  yM = (d + u)/2
+  xr = (r - l)/2
+  yr = (u - d)/2
   xri = xr * ratio
   yri = yr * ratio
 
 rect_move :: (Fractional a) => (a,a) -> Rectangle a -> Rectangle a
-rect_move (xp,yp) (Rectangle xL xR yL yR) = 
-  Rectangle (xL + xd) (xR + xd) (yL + yd) (yR + yd)
+rect_move (xp,yp) (Rectangle l r d u) = 
+  Rectangle (l + xd) (r + xd) (d + yd) (u + yd)
   where
-  xd = xp * (xR-xL)
-  yd = yp * (yR-yL)
+  xd = xp * (r-l)
+  yd = yp * (u-d)
 
 rect_isPanned :: (Eq a, Num a) => Rectangle a -> Rectangle a -> Bool
 rect_isPanned
@@ -59,8 +59,58 @@ rect_isPanned
   =
   r1 - l1 == r2 - l2 && u1 - d1 == u2 - d2
 
--- hullTwoRects :: Rectangle Rational -> Rectangle Rational -> [(Rational, Rational)]
--- hullTwoRects (Rectangle xL1 xR1 yL1 yR1) (Rectangle xL2 xR2 yL2 yR2) =
---   undefined
---   where
-
+hullTwoRects :: Ord t => Rectangle t -> Rectangle t -> [(t, t)]
+hullTwoRects
+  _rect1@(Rectangle l1 r1 d1 u1)
+  _rect2@(Rectangle l2 r2 d2 u2)
+    -- rect1 is inside rect2:
+  | ld1_inside && rd1_inside && ru1_inside && lu1_inside = [ld2, rd2, ru2, lu2]
+    -- rect2 is inside rect1:
+  | ld2_inside && rd2_inside && ru2_inside && lu2_inside = [ld1, rd1, ru1, lu1]
+    -- left edge of rect1 is inside the hull:
+  | ld1_inside && lu1_inside = [ld2, rd2, rd1, ru1, ru2, lu2]
+    -- left edge of rect2 is inside the hull:
+  | ld2_inside && lu2_inside = [ld1, rd1, rd2, ru2, ru1, lu1]
+    -- right edge of rect1 is inside the hull:
+  | rd1_inside && ru1_inside = [ld2, rd2, ru2, lu2, ld1, lu1]
+    -- right edge of rect2 is inside the hull:
+  | rd2_inside && ru2_inside = [ld1, rd1, ru1, lu1, ld2, lu2]
+    -- down edge of rect1 is inside the hull:
+  | ld1_inside && rd1_inside = [ld2, rd2, ru2, ru1, lu1, lu2]
+    -- down edge of rect2 is inside the hull:
+  | ld2_inside && rd2_inside = [ld1, rd1, ru1, ru2, lu2, lu1]
+    -- up edge of rect1 is inside the hull:
+  | lu1_inside && ru1_inside = [ld2, ld1, rd1, rd2, ru2, lu2]
+    -- up edge of rect2 is inside the hull:
+  | lu2_inside && ru2_inside = [ld1, ld2, rd2, rd1, ru1, lu1]
+    -- no edge fully inside the hull, rect2 located up right of rect1:
+  | ru1_inside && ld2_inside = [ld1, rd1, rd2, ru2, lu2, lu1]
+    -- no edge fully inside the hull, rect1 located up right of rect2:
+  | ru2_inside && ld1_inside = [ld2, rd2, rd1, ru1, lu1, lu2]
+    -- no edge fully inside the hull, rect2 located up left of rect1:
+  | lu1_inside && rd2_inside = [ld1, rd1, ru1, ru2, lu2, ld2]
+    -- no edge fully inside the hull, rect1 located up left of rect2:
+  | lu2_inside && rd1_inside = [ld2, rd2, ru2, ru1, lu1, ld1]
+    -- no corner is inside the hull, rect1 is taller and narrower than rect2:
+  | l2 <= l1 =
+    [ld1, rd1, rd2, ru2, ru1, lu1, lu2, ld2]
+    -- no corner is inside the hull, rect2 is taller and narrower than rect1:
+  | otherwise = 
+    [ld2, rd2, rd1, ru1, ru2, lu2, lu1, ld1]
+  where
+  ld1 = (l1,d1)
+  rd1 = (r1,d1)
+  ru1 = (r1,u1)
+  lu1 = (l1,u1)
+  ld2 = (l2,d2)
+  rd2 = (r2,d2)
+  ru2 = (r2,u2)
+  lu2 = (l2,u2)
+  ld1_inside = l2 <= l1 && d2 <= d1
+  ld2_inside = l1 <= l2 && d1 <= d2
+  rd1_inside = r1 <= r2 && d2 <= d1
+  rd2_inside = r2 <= r1 && d1 <= d2
+  lu1_inside = l2 <= l1 && u1 <= u2
+  lu2_inside = l1 <= l2 && u2 <= u1
+  ru1_inside = r1 <= r2 && u1 <= u2
+  ru2_inside = r2 <= r1 && u2 <= u1

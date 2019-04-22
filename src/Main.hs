@@ -687,23 +687,14 @@ viewResult State {..} =
     renderEnclosure (_fName, enclosure) =
       map renderSegment enclosure
       where
-      renderSegment (Rectangle lxL lxR lyL lyR, Rectangle rxL rxR ryL ryR) =
+      renderSegment (rect1, rect2) =
         polygon_  [stroke_ "black", fill_ "pink", points_ pointsMS] []
         where
         pointsMS = ms $ intercalate " " $ map showPoint points
         showPoint (x,y) = showR x ++ "," ++ showR y
         showR :: Rational -> String
         showR q = show $ (fromRational q :: Double)
-        points = 
-          map transformPt (pointsL ++ pointsR) 
-          where
-          pointsL
-            | lyL <= ryL = [(lxL,lyL), (lxR,lyL),(rxR, ryL)]
-            | otherwise = [(lxL,lyL), (rxL,ryL),(rxR, ryL)]
-          pointsR
-            | lyR <= ryR = [(rxR,ryR), (rxL,ryR),(lxL, lyR)]
-            | otherwise = [(rxR,ryR), (lxR,lyR),(lxL, lyR)]
-
+        points = map transformPt $ hullTwoRects rect1 rect2
 
 q2d :: Rational -> Double
 q2d = fromRational

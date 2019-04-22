@@ -221,6 +221,7 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
           _ -> defaultPlotAccuracy
       s' =
         s & state_items . at name .~ Just plotItem
+          & state_selectedItem .~ Just name
           & state_item_accuracies . at name .~ Just plotAccuracy
           & state_item_workers . at name .~ Nothing
           & state_item_encls . at name .~ Nothing

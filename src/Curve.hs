@@ -28,4 +28,5 @@ data ParamCurve2D =
   , _curve2D_x :: RX
   , _curve2D_y :: RX
   }
+  deriving (Show, Eq)
 

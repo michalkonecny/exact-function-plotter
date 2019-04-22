@@ -38,9 +38,20 @@ import qualified Data.CDAR as CDAR
 -- import Data.CDAR (Dyadic)
 
 import Expression
+import Curve
 
-type FnName = String
+type ItemName = String
 
+data PlotItem_Type =
+  PIT_Function | PIT_Curve -- | PIT_Fractal
+  deriving (Show, Eq, Enum)
+
+data PlotItem =
+    PlotItem_Function RX
+  | PlotItem_Curve ParamCurve2D
+  -- | PlotItem_Fractal LIFS_Fractal
+  deriving (Show, Eq)
+  
 {-
     A function is represented symbolically and rendered via a piece-wise affine enclosure.
     The direction of each segment is determined by an enclosure of the derivative
@@ -53,10 +64,10 @@ data State
   {
       _state_err :: Maybe String
     , _state_plotArea :: PlotArea
-    , _state_fn_exprs :: Map.Map FnName RX
-    , _state_fn_accuracy :: Map.Map FnName PlotAccuracy
-    , _state_fn_workers :: Map.Map FnName ThreadId
-    , _state_fn_encls :: Map.Map FnName PAEnclosure
+    , _state_items :: Map.Map ItemName PlotItem
+    , _state_item_accuracies :: Map.Map ItemName PlotAccuracy
+    , _state_item_workers :: Map.Map ItemName ThreadId
+    , _state_item_encls :: Map.Map ItemName PAEnclosure
     -- , _state_plotArea_Movement :: PlotAreaMovement
   }
   deriving (Show, Eq)
@@ -67,14 +78,14 @@ state_err :: Lens' State (Maybe String)
 state_err wrap (State a b c d e f) = fmap (\a' -> State a' b c d e f) (wrap a)
 state_plotArea :: Lens' State PlotArea
 state_plotArea wrap (State a b c d e f) = fmap (\b' -> State a b' c d e f) (wrap b)
-state_fn_exprs :: Lens' State (Map.Map FnName RX)
-state_fn_exprs wrap (State a b c d e f) = fmap (\c' -> State a b c' d e f) (wrap c)
-state_fn_accuracy :: Lens' State (Map.Map FnName PlotAccuracy)
-state_fn_accuracy wrap (State a b c d e f) = fmap (\d' -> State a b c d' e f) (wrap d)
-state_fn_workers :: Lens' State (Map.Map FnName ThreadId)
-state_fn_workers wrap (State a b c d e f) = fmap (\e' -> State a b c d e' f) (wrap e)
-state_fn_encls :: Lens' State (Map.Map FnName PAEnclosure)
-state_fn_encls wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
+state_items :: Lens' State (Map.Map ItemName PlotItem)
+state_items wrap (State a b c d e f) = fmap (\c' -> State a b c' d e f) (wrap c)
+state_item_accuracies :: Lens' State (Map.Map ItemName PlotAccuracy)
+state_item_accuracies wrap (State a b c d e f) = fmap (\d' -> State a b c d' e f) (wrap d)
+state_item_workers :: Lens' State (Map.Map ItemName ThreadId)
+state_item_workers wrap (State a b c d e f) = fmap (\e' -> State a b c d e' f) (wrap e)
+state_item_encls :: Lens' State (Map.Map ItemName PAEnclosure)
+state_item_encls wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
 -- state_plotArea_Movement :: Lens' State PlotAreaMovement
 -- state_plotArea_Movement wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
 
@@ -176,10 +187,10 @@ data Action
   = NoOp
   | NoOpErr String
   | NewPlotArea !PlotArea
-  | NewFunction !(FnName, RX)
-  | NewAccuracy !(FnName, PlotAccuracy)
-  | NewWorker !(FnName, ThreadId)
-  | NewEnclosureSegments !(FnName, Bool, PAEnclosure)
+  | NewFunction !(ItemName, RX)
+  | NewAccuracy !(ItemName, PlotAccuracy)
+  | NewWorker !(ItemName, ThreadId)
+  | NewEnclosureSegments !(ItemName, Bool, PAEnclosure)
   -- | SetDrag Bool
   deriving (Show, Eq)
 
@@ -227,7 +238,7 @@ actionSub actionChan sink = void . liftIO . forkIO $ keepPassingActions
     keepPassingActions
 
 -- | Updates state, optionally introducing side effects
-updateState :: (Chan Action) -> (TVar PlotArea) -> (TVar (Map.Map FnName (TVar PlotAccuracy))) -> State -> Action -> Effect Action State
+updateState :: (Chan Action) -> (TVar PlotArea) -> (TVar (Map.Map ItemName (TVar PlotAccuracy))) -> State -> Action -> Effect Action State
 updateState actionChan plotAreaTV plotAccuracyTV s action =
   case action of
     (NewPlotArea pa) ->
@@ -235,7 +246,7 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
         atomically $ writeTVar plotAreaTV pa
         return NoOp
     (NewAccuracy (name, pac)) ->
-      ((s & state_fn_accuracy . at name .~ Just pac) <#) $ liftIO $ do
+      ((s & state_item_accuracies . at name .~ Just pac) <#) $ liftIO $ do
         atomically $ do
           pacMap <- readTVar plotAccuracyTV
           case pacMap ^. at name of
@@ -249,28 +260,29 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
           paMap <- readTVar plotAccuracyTV
           writeTVar plotAccuracyTV $ paMap & (at name) .~ Just fnPlotAccuracyTV
           return fnPlotAccuracyTV
-        case s ^. state_fn_workers . at name of
+        case s ^. state_item_workers . at name of
           Just otid -> killThread otid -- stop previous worker thread
           _ -> pure ()
         -- start new worker thread:
-        threadId <- forkIO $ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name rf
+        threadId <- forkIO $ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem
         -- register the worker thread:
         pure $ NewWorker (name, threadId) 
       where
+      plotItem = PlotItem_Function rf
       plotAccuracy =
-        case s ^. state_fn_accuracy . at name of
+        case s ^. state_item_accuracies . at name of
           Just pac -> pac
           _ -> defaultPlotAccuracy
       s' =
-        s & state_fn_exprs . at name .~ Just rf 
-          & state_fn_accuracy . at name .~ Just plotAccuracy
-          & state_fn_workers . at name .~ Nothing
-          & state_fn_encls . at name .~ Nothing
+        s & state_items . at name .~ Just plotItem 
+          & state_item_accuracies . at name .~ Just plotAccuracy
+          & state_item_workers . at name .~ Nothing
+          & state_item_encls . at name .~ Nothing
     (NewWorker (name, tid)) ->
-      noEff $ s & state_fn_workers . at name .~ Just tid
+      noEff $ s & state_item_workers . at name .~ Just tid
     (NewEnclosureSegments (name, shouldAppend, encl)) ->
       noEff $ 
-        s & state_fn_encls . at name %~ addEncl
+        s & state_item_encls . at name %~ addEncl
       where
       addEncl (Just oldEncl) 
         | shouldAppend = Just $ oldEncl ++ encl
@@ -308,8 +320,8 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
     NoOp -> noEff s
 
 
-enclWorker :: Chan Action -> TVar PlotArea -> TVar PlotAccuracy -> String -> RX -> IO ()
-enclWorker actionChan plotAreaTV fnPlotAccuracyTV name rf =
+enclWorker :: Chan Action -> TVar PlotArea -> TVar PlotAccuracy -> String -> PlotItem -> IO ()
+enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
   waitForAreaAndAct [] Nothing
   where
   waitForAreaAndAct threadIds maybePrevCompInfo =
@@ -362,95 +374,102 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name rf =
       where
       (Rectangle xL xR _ _) = pa
 
-  sendNewEnclosureSegments isPanned plotArea plotAccuracy (xCL, xCR) =
+  sendNewEnclosureSegments isPanned plotArea plotAccuracy dom =
     writeChan actionChan 
       (NewEnclosureSegments (name, shouldAppend, enclosure))
     where
     shouldAppend = isPanned
-    Rectangle xL xR yL yR = plotArea
-    PlotAccuracy yN xMaxN xMinN = plotAccuracy
-    xLd = q2d xL
-    xRd = q2d xR
-    xWd = xRd - xLd
-    yLd = q2d yL
-    yRd = q2d yR
-    yWd = yRd - yLd
-    yNd = (fromIntegral yN) :: Double
-    xMinNd = (fromIntegral xMinN) :: Double
-    xMaxNd = (fromIntegral xMaxN) :: Double
-    maxSegSize = xWd/xMinNd
-    minSegSize = xWd/xMaxNd
-    yTolerance = yWd/yNd
-    enclosure = aseg xCL xCR
-    aseg l r 
-      | rd - ld > maxSegSize = asegDivision
-      | rd - ld < 2 * minSegSize = 
-          catMaybes [lrEnclosure0]
-          -- catMaybes [lrEnclosureBest]
-      | tol0 <= yTolerance = 
-          catMaybes [lrEnclosure0]
-      | tol1 <= yTolerance = 
-          catMaybes [lrEnclosure1]
-      | otherwise = asegDivision
+    enclosure = computeEnclosure plotItem plotArea plotAccuracy dom
+
+computeEnclosure :: PlotItem -> PlotArea -> PlotAccuracy -> (Rational, Rational) -> PAEnclosure
+computeEnclosure plotItem plotArea plotAccuracy (xCL, xCR) =
+  enclosure
+  where
+  Rectangle xL xR yL yR = plotArea
+  PlotAccuracy yN xMaxN xMinN = plotAccuracy
+  xLd = q2d xL
+  xRd = q2d xR
+  xWd = xRd - xLd
+  yLd = q2d yL
+  yRd = q2d yR
+  yWd = yRd - yLd
+  yNd = (fromIntegral yN) :: Double
+  xMinNd = (fromIntegral xMinN) :: Double
+  xMaxNd = (fromIntegral xMaxN) :: Double
+  maxSegSize = xWd/xMinNd
+  minSegSize = xWd/xMaxNd
+  yTolerance = yWd/yNd
+  enclosure = aseg xCL xCR
+  (PlotItem_Function rf) = plotItem -- TODO
+  aseg l r 
+    | rd - ld > maxSegSize = asegDivision
+    | rd - ld < 2 * minSegSize = 
+        catMaybes [lrEnclosure0]
+        -- catMaybes [lrEnclosureBest]
+    | tol0 <= yTolerance = 
+        catMaybes [lrEnclosure0]
+    | tol1 <= yTolerance = 
+        catMaybes [lrEnclosure1]
+    | otherwise = asegDivision
+    where
+    ld = q2d l
+    rd = q2d r
+    asegDivision = aseg l m ++ aseg m r
+      where m = (l+r)/2
+    (lrEnclosure1, lrEnclosure0) = encloseSegment (l,r)
+    tol0 = enclosure0Tolerance lrEnclosure0
+    enclosure0Tolerance (Just (_, PAPoint _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
+    enclosure0Tolerance _ = yWd
+    tol1 = enclosure1Tolerance lrEnclosure1
+    -- tol1Vert = enclosure1VertTolerance lrEnclosure1
+    enclosure1Tolerance (Just (PAPoint xiL _ yiLL _yiLR, PAPoint xiR _ yiRL yiRR)) =
+      xiW * yiW / (sqrt $ xiW^(2::Int) + yiD2^(2::Int))
       where
-      ld = q2d l
-      rd = q2d r
-      asegDivision = aseg l m ++ aseg m r
-        where m = (l+r)/2
-      (lrEnclosure1, lrEnclosure0) = encloseSegment (l,r)
-      tol0 = enclosure0Tolerance lrEnclosure0
-      enclosure0Tolerance (Just (_, PAPoint _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
-      enclosure0Tolerance _ = yWd
-      tol1 = enclosure1Tolerance lrEnclosure1
-      -- tol1Vert = enclosure1VertTolerance lrEnclosure1
-      enclosure1Tolerance (Just (PAPoint xiL _ yiLL _yiLR, PAPoint xiR _ yiRL yiRR)) =
-        xiW * yiW / (sqrt $ xiW^(2::Int) + yiD2^(2::Int))
-        where
-        yiW = (q2d yiRR) - (q2d yiRL)
-        xiW = (q2d xiR) - (q2d xiL)
-        yiD2 = yiD/2
-        yiD
-          | yiDavg >= 0 = yiDavg `min` (((max 0 yiLDd) `min` (max 0 yiRDd)) * xiW)
-          | otherwise = (-yiDavg) `min` (((max 0 (-yiLDd)) `min` (max 0 (-yiRDd))) * xiW)
-        yiDavg = (q2d yiRL) - (q2d yiLL)
-        D (_ : yiLDd : _) = evalRX () rf (xD () ld)
-        D (_ : yiRDd : _) = evalRX () rf (xD () rd)
-      enclosure1Tolerance _ = yWd
-    encloseSegment (xiL, xiR) =
-      (enclosure1, enclosure0)
-      where
-      xiM = (xiL + xiR)/2
-      yiM_A = evalRX (yPrec) rf (CDAR.toApprox (xPrec) xiM) 
-      xi_A = (CDAR.toApprox (xPrec) xiL) `CDAR.unionA` (CDAR.toApprox xPrec xiR)
-      (D (yi_A : yid_A : _)) = evalRX (yPrec) rf (xD xPrec xi_A)
-      enclosure1 =
-        case (CDAR.lowerBound yiM_A, CDAR.upperBound yiM_A, CDAR.lowerBound yid_A, CDAR.upperBound yid_A) of
-          (CDAR.Finite yiML_D, CDAR.Finite  yiMR_D, CDAR.Finite  yidL_D, CDAR.Finite  yidR_D) ->
-            let
-              yiML = toRational yiML_D 
-              yiMR = toRational yiMR_D 
-              yidL = toRational yidL_D 
-              yidR = toRational yidR_D
-              rad = (xiR - xiL)/2
-              yiLL = yiML - rad*yidR
-              yiLR = yiMR - rad*yidL
-              yiRL = yiML + rad*yidL
-              yiRR = yiMR + rad*yidR
-            in
-            Just (PAPoint xiL xiL yiLL yiLR, PAPoint xiR xiR yiRL yiRR)
-          _ -> Nothing
-      enclosure0 =
-        case (CDAR.lowerBound yi_A, CDAR.upperBound yi_A) of
-          (CDAR.Finite yiL_D, CDAR.Finite yiR_D) ->
-            let
-              yiL = toRational yiL_D 
-              yiR = toRational yiR_D 
-            in
-            Just (PAPoint xiL xiL yiL yiR, PAPoint xiR xiR yiL yiR)
-          _ -> Nothing
-    xPrec, yPrec :: CDAR.Precision
-    xPrec = 10 + (round $ negate $ logBase 2 (minSegSize))
-    yPrec = 10 + (round $ negate $ logBase 2 (yTolerance))
+      yiW = (q2d yiRR) - (q2d yiRL)
+      xiW = (q2d xiR) - (q2d xiL)
+      yiD2 = yiD/2
+      yiD
+        | yiDavg >= 0 = yiDavg `min` (((max 0 yiLDd) `min` (max 0 yiRDd)) * xiW)
+        | otherwise = (-yiDavg) `min` (((max 0 (-yiLDd)) `min` (max 0 (-yiRDd))) * xiW)
+      yiDavg = (q2d yiRL) - (q2d yiLL)
+      D (_ : yiLDd : _) = evalRX () rf (xD () ld)
+      D (_ : yiRDd : _) = evalRX () rf (xD () rd)
+    enclosure1Tolerance _ = yWd
+  encloseSegment (xiL, xiR) =
+    (enclosure1, enclosure0)
+    where
+    xiM = (xiL + xiR)/2
+    yiM_A = evalRX (yPrec) rf (CDAR.toApprox (xPrec) xiM) 
+    xi_A = (CDAR.toApprox (xPrec) xiL) `CDAR.unionA` (CDAR.toApprox xPrec xiR)
+    (D (yi_A : yid_A : _)) = evalRX (yPrec) rf (xD xPrec xi_A)
+    enclosure1 =
+      case (CDAR.lowerBound yiM_A, CDAR.upperBound yiM_A, CDAR.lowerBound yid_A, CDAR.upperBound yid_A) of
+        (CDAR.Finite yiML_D, CDAR.Finite  yiMR_D, CDAR.Finite  yidL_D, CDAR.Finite  yidR_D) ->
+          let
+            yiML = toRational yiML_D 
+            yiMR = toRational yiMR_D 
+            yidL = toRational yidL_D 
+            yidR = toRational yidR_D
+            rad = (xiR - xiL)/2
+            yiLL = yiML - rad*yidR
+            yiLR = yiMR - rad*yidL
+            yiRL = yiML + rad*yidL
+            yiRR = yiMR + rad*yidR
+          in
+          Just (PAPoint xiL xiL yiLL yiLR, PAPoint xiR xiR yiRL yiRR)
+        _ -> Nothing
+    enclosure0 =
+      case (CDAR.lowerBound yi_A, CDAR.upperBound yi_A) of
+        (CDAR.Finite yiL_D, CDAR.Finite yiR_D) ->
+          let
+            yiL = toRational yiL_D 
+            yiR = toRational yiR_D 
+          in
+          Just (PAPoint xiL xiL yiL yiR, PAPoint xiR xiR yiL yiR)
+        _ -> Nothing
+  xPrec, yPrec :: CDAR.Precision
+  xPrec = 10 + (round $ negate $ logBase 2 (minSegSize))
+  yPrec = 10 + (round $ negate $ logBase 2 (yTolerance))
 
 -- | Constructs a virtual DOM from a state
 viewState :: State -> View Action
@@ -463,7 +482,7 @@ viewState s@State{..} =
     ++ viewFnControls "f2" s
     ++ viewResult s
     -- ++ [br_ [], text (ms $ show $ _state_plotArea), br_ []]
-    -- ++ [br_ [], text (ms $ show $ _state_fn_accuracy), br_ []]
+    -- ++ [br_ [], text (ms $ show $ _state_item_accuracies), br_ []]
     ++
     [
       text "Plot area: " 
@@ -503,7 +522,7 @@ viewState s@State{..} =
     -- sumSegment (PAPoint _ yLL yLR, PAPoint _ yRL yRR) =
     --   sum $ map fromRational [yLL,yLR,yRL,yRR] :: Double
 
-viewFnControls :: FnName -> State -> [View Action]
+viewFnControls :: ItemName -> State -> [View Action]
 viewFnControls fnname s@State{..} =
     [
       text $ s2ms $ printf "Function %s(x) = " fnname 
@@ -522,7 +541,7 @@ viewFnControls fnname s@State{..} =
     ]
     where
     pac = 
-      case s ^. state_fn_accuracy . at fnname of
+      case s ^. state_item_accuracies . at fnname of
         Just fpac -> fpac
         _ -> defaultPlotAccuracy
     act_on_function fMS = 
@@ -540,7 +559,7 @@ viewFnControls fnname s@State{..} =
             [(n,_)] -> NewAccuracy (fnname, fpac & paclens .~ n)
                 where
                 fpac = 
-                  case (s ^. state_fn_accuracy . at fnname) of
+                  case (s ^. state_item_accuracies . at fnname) of
                     Just fpac2 -> fpac2
                     _ ->  defaultPlotAccuracy
             _ -> NoOp
@@ -574,7 +593,7 @@ viewResult State {..} =
               [ viewHeightAttr, viewWidthAttr
               ] $
                 [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
-                ++ (concat $ map renderEnclosure $ Map.toList _state_fn_encls)
+                ++ (concat $ map renderEnclosure $ Map.toList _state_item_encls)
                 ++ concat xGuides ++ concat yGuides
           ]
     ]

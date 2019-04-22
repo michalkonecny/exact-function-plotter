@@ -61,13 +61,17 @@ data BinOp = Plus | Minus | Times | Divide | Power -- | Max
 showLit :: Rational -> String
 showLit r 
   | isInteger = show rI
-  | isDouble = show rD
-  | otherwise = printf "(%s/%s)" (numerator r) (denominator r)
+  | isDouble = rDs
+  | otherwise = printf "(%s/%s)" (show $ numerator r) (show $ denominator r)
   where
   rI = round r
   isInteger = (fromInteger rI == r)
   rD = fromRational r :: Double
-  isDouble = (toRational rD == r && read (show rD) == rD )
+  rDs = printf "%f" rD :: String 
+  isDouble = 
+    case parseRX "x" rDs of
+      Right (RXLit q) -> q == r
+      _ -> False
 
 showRX :: String -> RX -> String
 showRX varName = aux

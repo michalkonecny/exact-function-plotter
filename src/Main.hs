@@ -522,23 +522,23 @@ viewState s@State{..} =
     --   sum $ map fromRational [yLL,yLR,yRL,yRR] :: Double
 
 viewFnControls :: ItemName -> State -> [View Action]
-viewFnControls fnname s@State{..} =
+viewFnControls itemName s@State{..} =
     [
-      text $ s2ms $ printf "Function %s(x) = " fnname 
+      text $ s2ms $ printf "Function %s(x) = " itemName 
     , input_ [ size_ "80", onChange $ act_on_function]
     , br_ []
     ]
-    ++ viewPlotAccuracy fnname s
+    ++ viewPlotAccuracy itemName s
     where
     act_on_function fMS = 
       case (parseRX $ fromMisoString fMS) of
-        Right rf -> NewPlotItem (fnname, PlotItem_Function rf)
+        Right rf -> NewPlotItem (itemName, PlotItem_Function rf)
         Left _errmsg -> NoOp -- TODO
 
 viewPlotAccuracy :: ItemName -> State -> [View Action]
-viewPlotAccuracy fnname s@State{..} =
+viewPlotAccuracy itemName s@State{..} =
     [
-      text $ s2ms $ printf "%s(x) accuracy ~ w/" fnname
+      text $ s2ms $ printf "%s(x) accuracy ~ w/" itemName
     , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_targetYSegments $ pac), onChange $ act_on_targetYsegs ]
     -- , br_ []
     , text "  " 
@@ -551,7 +551,7 @@ viewPlotAccuracy fnname s@State{..} =
     ]
     where
     pac = 
-      case s ^. state_item_accuracies . at fnname of
+      case s ^. state_item_accuracies . at itemName of
         Just fpac -> fpac
         _ -> defaultPlotAccuracy
     act_on_targetYsegs = 
@@ -562,10 +562,10 @@ viewPlotAccuracy fnname s@State{..} =
       act_on_plotAccuracy plotAccuracy_minXSegments
     act_on_plotAccuracy paclens nMS = 
         case reads (fromMisoString nMS) of
-            [(n,_)] -> NewAccuracy (fnname, fpac & paclens .~ n)
+            [(n,_)] -> NewAccuracy (itemName, fpac & paclens .~ n)
                 where
                 fpac = 
-                  case (s ^. state_item_accuracies . at fnname) of
+                  case (s ^. state_item_accuracies . at itemName) of
                     Just fpac2 -> fpac2
                     _ ->  defaultPlotAccuracy
             _ -> NoOp

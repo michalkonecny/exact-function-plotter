@@ -171,20 +171,7 @@ rect_isPanned
 
 type PAEnclosure = [PASegment]
 
-type PASegment = (PAPoint Rational, PAPoint Rational)
-
-data PAPoint a = 
-  PAPoint 
-  {
-      _papt_xL :: a
-    , _papt_xR :: a
-    , _papt_yL :: a
-    , _papt_yR :: a
-  }
-  deriving (Show, Eq)
-
--- makeLenses ''PAPoint
--- makeLenses ''Rectangle
+type PASegment = (Rectangle Rational, Rectangle Rational)
 
 data Action
   = NoOp
@@ -442,14 +429,14 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
           w1x = enclosure1Width rx_x e1x
           w1y = enclosure1Width rx_y e1y
           combine_exy 
-            (Just (PAPoint _ _ xiLL xiLR, PAPoint _ _ xiRL xiRR))
-            (Just (PAPoint _ _ yiLL yiLR, PAPoint _ _ yiRL yiRR)) =
-            Just (PAPoint xiLL xiLR yiLL yiLR, PAPoint xiRL xiRR yiRL yiRR)
+            (Just (Rectangle _ _ xiLL xiLR, Rectangle _ _ xiRL xiRR))
+            (Just (Rectangle _ _ yiLL yiLR, Rectangle _ _ yiRL yiRR)) =
+            Just (Rectangle xiLL xiLR yiLL yiLR, Rectangle xiRL xiRR yiRL yiRR)
           combine_exy _ _ = Nothing
-    enclosure0Width (Just (_, PAPoint _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
+    enclosure0Width (Just (_, Rectangle _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
     enclosure0Width _ = yWd
     -- tol1Vert = enclosure1VertTolerance lrEnclosure1
-    enclosure1Width rx (Just (PAPoint xiL _ yiLL _yiLR, PAPoint xiR _ yiRL yiRR)) =
+    enclosure1Width rx (Just (Rectangle xiL _ yiLL _yiLR, Rectangle xiR _ yiRL yiRR)) =
       xiW * yiW / (sqrt $ xiW^(2::Int) + yiD2^(2::Int))
       where
       yiW = (q2d yiRR) - (q2d yiRL)
@@ -483,7 +470,7 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
             yiRL = yiML + rad*yidL
             yiRR = yiMR + rad*yidR
           in
-          Just (PAPoint xiL xiL yiLL yiLR, PAPoint xiR xiR yiRL yiRR)
+          Just (Rectangle xiL xiL yiLL yiLR, Rectangle xiR xiR yiRL yiRR)
         _ -> Nothing
     enclosure0 =
       case (CDAR.lowerBound yi_A, CDAR.upperBound yi_A) of
@@ -492,7 +479,7 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
             yiL = toRational yiL_D 
             yiR = toRational yiR_D 
           in
-          Just (PAPoint xiL xiL yiL yiR, PAPoint xiR xiR yiL yiR)
+          Just (Rectangle xiL xiL yiL yiR, Rectangle xiR xiR yiL yiR)
         _ -> Nothing
   xPrec, yPrec :: CDAR.Precision
   xPrec = 10 + (round $ negate $ logBase 2 (minSegSize))
@@ -558,7 +545,7 @@ viewPlotAreaControls s@State{..} =
     pani :: (Rational, Rational) -> Action
     pani (xi,yi) =
       NewPlotArea $ rect_move ((1/10)*xi, (1/10)*yi) _state_plotArea
-    -- sumSegment (PAPoint _ yLL yLR, PAPoint _ yRL yRR) =
+    -- sumSegment (Rectangle _ yLL yLR, Rectangle _ yRL yRR) =
     --   sum $ map fromRational [yLL,yLR,yRL,yRR] :: Double
 
 viewFnControls :: ItemName -> State -> [View Action]
@@ -742,7 +729,7 @@ viewResult State {..} =
     renderEnclosure (_fName, enclosure) =
       map renderSegment enclosure
       where
-      renderSegment (PAPoint lxL lxR lyL lyR, PAPoint rxL rxR ryL ryR) =
+      renderSegment (Rectangle lxL lxR lyL lyR, Rectangle rxL rxR ryL ryR) =
         polygon_  [stroke_ "black", fill_ "pink", points_ pointsMS] []
         where
         pointsMS = ms $ intercalate " " $ map showPoint points
@@ -758,6 +745,11 @@ viewResult State {..} =
           pointsR
             | lyR <= ryR = [(rxR,ryR), (rxL,ryR),(lxL, lyR)]
             | otherwise = [(rxR,ryR), (lxR,lyR),(lxL, lyR)]
+
+-- hullTwoBoxes :: Rectangle Rational -> Rectangle Rational -> [(Rational, Rational)]
+-- hullTwoBoxes (Rectangle xL1 xR1 yL1 yR1) (Rectangle xL2 xR2 yL2 yR2) =
+--   undefined
+--   where
 
 
 q2d :: Rational -> Double

@@ -469,19 +469,26 @@ instance ToMisoString Rational where
 viewAddItem :: State -> [View Action]
 viewAddItem _s@State{..} =
   [
-    text "Add item: "
-  , flip button_ [text "function"] [ onClick (NewPlotItem (fnName, (PlotItem_Function RXVarX)))]
-  , flip button_ [text "curve"] [ onClick (NewPlotItem (curveName, (PlotItem_Curve defaultCurve2D)))]
+    text "Add: "
+  , flip button_ [text "function"] [ onClick (NewPlotItem (freshName "f", (PlotItem_Function RXVarX)))]
+  , flip button_ [text "sin(10x^2)"] [ onClick (NewPlotItem (freshName "sin(10x^2)", (PlotItem_Function (rx "sin(10*x^2)"))))]
+  , flip button_ [text "x*sin(10/x)"] [ onClick (NewPlotItem (freshName "x*sin(10/x)", (PlotItem_Function (rx "x*sin(10/x)"))))]
+  , text "; "
+  , flip button_ [text "curve"] [ onClick (NewPlotItem (freshName "c", (PlotItem_Curve defaultCurve2D)))]
+  , flip button_ [text "spiral"] [ onClick (NewPlotItem (freshName "spiral", (PlotItem_Curve spiral)))]
+  , flip button_ [text "infty"] [ onClick (NewPlotItem (freshName "infty", (PlotItem_Curve infty)))]
   , br_ []
   ]
   where
   itemNames = Map.keys _state_items
-  fnName = freshName "f"
-  curveName = freshName "c"
+  rx s = case parseRX "x" s of Right r -> r; _ -> RXVarX 
   freshName prefix =
-    case find (not . flip elem itemNames) [ prefix ++ show (i :: Int) | i <- [1..] ] of
+    case find (not . flip elem itemNames) $ prefix : [ prefix ++ show (i :: Int) | i <- [2..] ] of
       Just nm -> nm
       _ -> error "failed to find a default function name"
+  spiral = Curve2D (0, 50) (rx "0.02*x*sin(x)") (rx "0.02*x*cos(x)")
+  infty = Curve2D (0, 6.29) (rx "0.8*sin(x)") (rx "0.5*sin(2*x)")
+  
 
 viewItemList :: State -> [View Action]
 viewItemList _s@State{..} =

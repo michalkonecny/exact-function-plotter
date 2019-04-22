@@ -527,7 +527,18 @@ viewFnControls fnname s@State{..} =
       text $ s2ms $ printf "Function %s(x) = " fnname 
     , input_ [ size_ "80", onChange $ act_on_function]
     , br_ []
-    , text $ s2ms $ printf "%s(x) accuracy ~ w/" fnname
+    ]
+    ++ viewPlotAccuracy fnname s
+    where
+    act_on_function fMS = 
+      case (parseRX $ fromMisoString fMS) of
+        Right rf -> NewPlotItem (fnname, PlotItem_Function rf)
+        Left _errmsg -> NoOp -- TODO
+
+viewPlotAccuracy :: ItemName -> State -> [View Action]
+viewPlotAccuracy fnname s@State{..} =
+    [
+      text $ s2ms $ printf "%s(x) accuracy ~ w/" fnname
     , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_targetYSegments $ pac), onChange $ act_on_targetYsegs ]
     -- , br_ []
     , text "  " 
@@ -543,10 +554,6 @@ viewFnControls fnname s@State{..} =
       case s ^. state_item_accuracies . at fnname of
         Just fpac -> fpac
         _ -> defaultPlotAccuracy
-    act_on_function fMS = 
-      case (parseRX $ fromMisoString fMS) of
-        Right rf -> NewPlotItem (fnname, PlotItem_Function rf)
-        Left _errmsg -> NoOp -- TODO
     act_on_targetYsegs = 
       act_on_plotAccuracy plotAccuracy_targetYsegments
     act_on_maxXsegs = 

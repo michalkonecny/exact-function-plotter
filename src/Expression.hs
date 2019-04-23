@@ -27,6 +27,7 @@
 -- | Haskell module declaration
 module Expression where
 
+import Text.Printf
 -- import Control.Lens
 
 import Control.Applicative ((<|>))
@@ -37,7 +38,7 @@ import qualified Text.ParserCombinators.Parsec      as P
 -- import qualified Text.Parsec.Prim as P hiding (try)
 
 import qualified Data.Map as Map
-
+import Data.Ratio
 
 import Data.CDAR
 
@@ -57,45 +58,97 @@ data UnOp = Neg | PowI Integer | Sqrt | Exp | Log | Sine | Cosine | Tan
 data BinOp = Plus | Minus | Times | Divide | Power -- | Max
   deriving (Show, Eq, Ord)
 
+showLit :: Rational -> String
+showLit r 
+  | isInteger = show rI
+  | isDouble = rDs
+  | otherwise = printf "(%s/%s)" (show $ numerator r) (show $ denominator r)
+  where
+  rI = round r
+  isInteger = (fromInteger rI == r)
+  rD = fromRational r :: Double
+  rDs = printf "%f" rD :: String 
+  isDouble = 
+    case parseRX "x" rDs of
+      Right (RXLit q) -> q == r
+      _ -> False
+
+showRX :: String -> RX -> String
+showRX varName = aux
+  where
+  aux RXVarX = varName
+  aux (RXLit r) = showLit r
+  aux (RXConst Pi) = "pi"
+  aux (RXConst E) = "e"
+  aux (RXUn (PowI n) rx1) =
+    printf "%s^%s" (aux' rx1) (show n)
+  aux (RXUn un rx1) =
+    printf "%s(%s)" (showUn un) (aux rx1)
+  aux (RXBin bin rx1 rx2) =
+    printf "%s%s%s" (aux' rx1) (showBin bin) (aux' rx2)
+  aux' rx =
+    case rx of
+      RXVarX -> aux rx
+      RXLit _ -> aux rx
+      RXConst _ -> aux rx
+      _ -> "(" ++ aux rx ++ ")"
+
+showUn :: UnOp -> String
+showUn Neg = "-"
+showUn (PowI n) = "^(" ++ show n ++ ")"
+showUn Sqrt = "sqrt"
+showUn Exp = "exp"
+showUn Log = "log"
+showUn Sine = "sin"
+showUn Cosine = "cos"
+showUn Tan = "tan"
+
+showBin :: BinOp -> String
+showBin Plus = "+"
+showBin Minus = "-"
+showBin Times = "*"
+showBin Divide = "/"
+showBin Power = "^"
+
 foldConstants :: RX -> RX
 foldConstants = aux
   where
-  aux (RXUn op rf1) = 
-    case (aux rf1, op) of
+  aux (RXUn op rx1) = 
+    case (aux rx1, op) of
       (RXLit r1, Neg) -> RXLit (- r1)
       (RXLit r1, PowI n) | n >= 0 -> RXLit (r1^n)
-      (rf1', _) -> RXUn op rf1'
-  aux (RXBin op rf1 rf2) = 
-    case (aux rf1, aux rf2, op) of
+      (rx1', _) -> RXUn op rx1'
+  aux (RXBin op rx1 rx2) = 
+    case (aux rx1, aux rx2, op) of
       (RXLit r1, RXLit r2, Plus) -> RXLit (r1+r2)
       (RXLit r1, RXLit r2, Minus) -> RXLit (r1-r2)
       (RXLit r1, RXLit r2, Times) -> RXLit (r1*r2)
       (RXLit r1, RXLit r2, Divide) -> RXLit (r1/r2)
-      (rf1', rf2', _) -> RXBin op rf1' rf2'
-  aux rf = rf
+      (rx1', rx2', _) -> RXBin op rx1' rx2'
+  aux rx = rx
 
 evalRX :: (CanEvalRX a) => (PrecRX a) -> RX -> a -> a
 evalRX p rf0 x =
   fst $ evalCached Map.empty rf0
   where
-  evalCached c rf =
-    case Map.lookup rf c of
+  evalCached c rx =
+    case Map.lookup rx c of
       Just res -> (res,c)
       _ ->
-        evalAndCache c rf
+        evalAndCache c rx
 
-  evalAndCache c rf =
+  evalAndCache c rx =
     let
-      (r, c') = evalPassCache c rf
+      (r, c') = evalPassCache c rx
     in
-      (r, Map.insert rf r c')
+      (r, Map.insert rx r c')
   evalPassCache c (RXVarX) = (x, c)
   evalPassCache c (RXLit r) = (litRX p r, c)
   evalPassCache c (RXConst Pi) = (piRX p, c)
   evalPassCache c (RXConst E) = (eRX p, c)
-  evalPassCache c (RXUn op rf1) =
+  evalPassCache c (RXUn op rx1) =
     let
-      (r1, c1) = evalCached c rf1
+      (r1, c1) = evalCached c rx1
     in
       (evalOp op r1, c1)
     where
@@ -107,10 +160,10 @@ evalRX p rf0 x =
     evalOp Sine = sinRX
     evalOp Cosine = cosRX
     evalOp Tan = tanRX
-  evalPassCache c (RXBin op rf1 rf2) =
+  evalPassCache c (RXBin op rx1 rx2) =
     let
-      (r1, c1) = evalCached c rf1
-      (r2, c2) = evalCached c1 rf2
+      (r1, c1) = evalCached c rx1
+      (r2, c2) = evalCached c1 rx2
     in
       (evalOp op r1 r2, c2)
     where
@@ -368,8 +421,8 @@ isIntegerRX_D _ = (False, 0)
 -- > >>> parse "exp(-pi*i)+1"
 -- > Right (Add (Exp (Mul (Neg (Var "pi")) (Var "i"))) (Num 1.0))
 --
-parseRX :: String -> Either P.ParseError RX
-parseRX = P.parse expr "" . (:) '(' . flip (++) ")" . filter (/=' ')
+parseRX :: String -> String -> Either P.ParseError RX
+parseRX varName = P.parse expr "" . (:) '(' . flip (++) ")" . filter (/=' ')
   where
   expr :: P.Parser RX
   expr = P.buildExpressionParser table factor
@@ -396,13 +449,13 @@ parseRX = P.parse expr "" . (:) '(' . flip (++) ")" . filter (/=' ')
     ] where binary s f a = P.Infix  (       P.string s  >> return f) a
             prefix s f   = P.Prefix (P.try (P.string s) >> return f)
 
-  powerRX rf1 rf2 = 
-    case foldConstants rf2 of
+  powerRX rx1 rx2 = 
+    case foldConstants rx2 of
       RXLit r -> 
         case properFraction r of
-          (n,rm) | rm == 0 -> RXUn (PowI n) rf1
-          _ -> RXBin Power rf1 rf2
-      _ -> RXBin Power rf1 rf2
+          (n,rm) | rm == 0 -> RXUn (PowI n) rx1
+          _ -> RXBin Power rx1 rx2
+      _ -> RXBin Power rx1 rx2
 
   factor :: P.Parser RX
   factor = do
@@ -414,14 +467,14 @@ parseRX = P.parse expr "" . (:) '(' . flip (++) ")" . filter (/=' ')
 
   atom :: P.Parser RX
   atom = do
-    name <- P.string "x" P.<|> P.string "pi" P.<|> P.string "e"
+    name <- P.string varName P.<|> P.string "pi" P.<|> P.string "e"
     pure $! procName name
     <|> number
     where
-    procName "x" = RXVarX
     procName "pi" = RXConst Pi
     procName "e" = RXConst E
-    procName name = error $ name ++ " (valid names: x, pi, e)"
+    procName name | name == varName = RXVarX
+    procName name = error $ printf "%s (valid names: %s, pi, e)" name varName
 
   number :: P.Parser RX
   number = do

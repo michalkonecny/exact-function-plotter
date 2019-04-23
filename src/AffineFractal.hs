@@ -25,11 +25,16 @@ data AffineFractal =
     _affineFractal_curves :: [Curve2D]
   , _affineFractal_transforms :: [AffineTransform Rational] 
   }
+  deriving (Show, Eq)
 
 affineFractal_curves :: Lens' AffineFractal [Curve2D]
 affineFractal_curves wrap (AffineFractal a b) = fmap (\a' -> AffineFractal a' b) (wrap a)
 affineFractal_transforms :: Lens' AffineFractal [AffineTransform Rational]
 affineFractal_transforms wrap (AffineFractal a b) = fmap (\b' -> AffineFractal a b') (wrap b)
+
+defaultFractal :: AffineFractal
+defaultFractal =
+  AffineFractal [defaultCurve2D] [((0,0.5,0),(0.5,0,0),(0,0,1))]
 
 class CanAffineTransform t where
   addAT :: t -> t -> t

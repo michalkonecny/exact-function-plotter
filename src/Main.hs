@@ -42,17 +42,18 @@ import qualified Data.CDAR as CDAR
 import Rectangle
 import Expression
 import Curve
+import AffineFractal
 
 type ItemName = String
 
 data PlotItem_Type =
-  PIT_Function | PIT_Curve -- | PIT_Fractal
+  PIT_Function | PIT_Curve | PIT_Fractal
   deriving (Show, Eq, Enum)
 
 data PlotItem =
     PlotItem_Function RX
   | PlotItem_Curve Curve2D
-  -- | PlotItem_Fractal LIFS_Fractal
+  | PlotItem_Fractal AffineFractal
   deriving (Show, Eq)
 
 {-
@@ -478,6 +479,8 @@ viewAddItem _s@State{..} =
   , flip button_ [text "spiral"] [ onClick (NewPlotItem (freshName "spiral", (PlotItem_Curve spiral)))]
   , flip button_ [text "infty"] [ onClick (NewPlotItem (freshName "infty", (PlotItem_Curve infty)))]
   , flip button_ [text "mesh"] [ onClick (NewPlotItem (freshName "mesh", (PlotItem_Curve mesh)))]
+  , text "; "
+  , flip button_ [text "fractal"] [ onClick (NewPlotItem (freshName "fr", (PlotItem_Fractal defaultFractal)))]
   , br_ []
   ]
   where
@@ -517,8 +520,125 @@ viewSelectedItemControls s@State{..} =
       case _state_items ^. at itemName of
         Just (PlotItem_Function _) -> viewFnControls itemName s
         Just (PlotItem_Curve _) -> viewCurveControls itemName s
+        Just (PlotItem_Fractal _) -> viewFractalControls itemName s
         _ -> []
     _ -> []
+
+viewFnControls :: ItemName -> State -> [View Action]
+viewFnControls itemName s@State{..} =
+    [
+      text $ s2ms $ printf "Function %s(x) = " itemName
+    , input_ [ size_ "80", value_ (ms $ showRX "x" rx), onChange $ act_on_function]
+    , br_ []
+    ]
+    ++ viewPlotAccuracy itemName s
+    where
+    rx =
+      case _state_items ^. at itemName of
+        Just (PlotItem_Function rx2) -> rx2
+        _ -> RXVarX
+    act_on_function fMS =
+      case (parseRX "x" $ fromMisoString fMS) of
+        Right rx2 -> NewPlotItem (itemName, PlotItem_Function rx2)
+        Left _errmsg -> NoOp -- TODO
+
+viewEmbeddedCurveControls :: Curve2D -> (Curve2D -> Action) -> String -> State -> [View Action]
+viewEmbeddedCurveControls curve mkAction curveName s@State{..} =
+    [
+      text $ s2ms $ printf "Curve %s_x(t) = " curveName
+    , input_ [ size_ "80", value_ (ms $ showRX "t" $ curve ^. curve2D_x), onChange $ act_on_x]
+    , br_ []
+    , text $ s2ms $ printf "Curve %s_y(t) = " curveName
+    , input_ [ size_ "80", value_ (ms $ showRX "t" $ curve ^. curve2D_y), onChange $ act_on_y]
+    , br_ []
+    , input_ [ size_ "8", value_ (ms $ curve ^. curve2D_dom . _1), onChange $ act_on_t _1]
+    , text " <= t <= "
+    , input_ [ size_ "8", value_ (ms $ curve ^. curve2D_dom . _2), onChange $ act_on_t _2]
+    , br_ []
+    ]
+    where
+    act_on_x fMS =
+      case (parseRX "t" $ fromMisoString fMS) of
+        Right rx -> mkAction $ curve & curve2D_x .~ rx
+        Left _errmsg -> NoOp -- TODO
+    act_on_y fMS =
+      case (parseRX "t" $ fromMisoString fMS) of
+        Right rx -> mkAction $ curve & curve2D_y .~ rx
+        Left _errmsg -> NoOp -- TODO
+    act_on_t domlens tMS =
+      case reads (fromMisoString tMS) of
+        [(t,_)] -> mkAction $ curve & curve2D_dom . domlens .~ (d2q t)
+        _ -> NoOp
+
+viewCurveControls :: ItemName -> State -> [View Action]
+viewCurveControls itemName s@State{..} =
+    viewEmbeddedCurveControls curve mkAction itemName s
+    ++ viewPlotAccuracy itemName s
+    where
+    mkAction c = NewPlotItem (itemName, PlotItem_Curve c)
+    curve =
+      case _state_items ^. at itemName of
+        Just (PlotItem_Curve c) -> c
+        _ -> defaultCurve2D
+
+viewFractalControls :: ItemName -> State -> [View Action]
+viewFractalControls itemName s@State{..} =
+    [
+      text $ s2ms $ printf "Fractal %s, curves:" itemName
+    , br_ []
+    ]
+    ++ (concat $ map viewCurve $ zip [1..] curves) ++
+    [
+      text $ s2ms $ printf "Fractal %s, transforms:" itemName
+    , br_ []
+    ]
+    -- ++ (concat $ map viewTransform $ zip [1..] transforms) -- TODO
+    ++ viewPlotAccuracy itemName s
+    where
+    AffineFractal curves transforms = fractal
+    fractal =
+      case _state_items ^. at itemName of
+        Just (PlotItem_Fractal fr) -> fr
+        _ -> defaultFractal
+    viewCurve (i,curve) =
+       viewEmbeddedCurveControls curve mkAction (itemName ++ "_curve" ++ show i) s
+       where
+       mkAction c = 
+        NewPlotItem (itemName, PlotItem_Fractal $ fractal & affineFractal_curves . ix (i-1) .~ c)
+
+viewPlotAccuracy :: ItemName -> State -> [View Action]
+viewPlotAccuracy itemName s@State{..} =
+    [
+      text $ s2ms $ printf "%s(x) accuracy ~ w/" itemName
+    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_targetYSegments $ pac), onChange $ act_on_targetYsegs ]
+    -- , br_ []
+    , text "  "
+    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_minXSegments $ pac), onChange $ act_on_minXsegs ]
+    , text " <= segments <= "
+    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_maxXSegments $ pac), onChange $ act_on_maxXsegs ]
+    , br_ []
+    ]
+    where
+    pac =
+      case s ^. state_item_accuracies . at itemName of
+        Just fpac -> fpac
+        _ -> defaultPlotAccuracy
+    act_on_targetYsegs =
+      act_on_plotAccuracy plotAccuracy_targetYsegments
+    act_on_maxXsegs =
+      act_on_plotAccuracy plotAccuracy_maxXSegments
+    act_on_minXsegs =
+      act_on_plotAccuracy plotAccuracy_minXSegments
+    act_on_plotAccuracy paclens nMS =
+        case reads (fromMisoString nMS) of
+            [(n,_)] -> NewAccuracy (itemName, fpac & paclens .~ n)
+                where
+                fpac =
+                  case (s ^. state_item_accuracies . at itemName) of
+                    Just fpac2 -> fpac2
+                    _ ->  defaultPlotAccuracy
+            _ -> NoOp
+
 
 viewPlotAreaControls :: State -> [View Action]
 viewPlotAreaControls s@State{..} =
@@ -559,91 +679,6 @@ viewPlotAreaControls s@State{..} =
       NewPlotArea $ rect_move ((1/10)*xi, (1/10)*yi) _state_plotArea
     -- sumSegment (Rectangle _ yLL yLR, Rectangle _ yRL yRR) =
     --   sum $ map fromRational [yLL,yLR,yRL,yRR] :: Double
-
-viewFnControls :: ItemName -> State -> [View Action]
-viewFnControls itemName s@State{..} =
-    [
-      text $ s2ms $ printf "Function %s(x) = " itemName
-    , input_ [ size_ "80", value_ (ms $ showRX "x" rx), onChange $ act_on_function]
-    , br_ []
-    ]
-    ++ viewPlotAccuracy itemName s
-    where
-    rx =
-      case _state_items ^. at itemName of
-        Just (PlotItem_Function rx2) -> rx2
-        _ -> RXVarX
-    act_on_function fMS =
-      case (parseRX "x" $ fromMisoString fMS) of
-        Right rx2 -> NewPlotItem (itemName, PlotItem_Function rx2)
-        Left _errmsg -> NoOp -- TODO
-
-viewCurveControls :: ItemName -> State -> [View Action]
-viewCurveControls itemName s@State{..} =
-    [
-      text $ s2ms $ printf "Curve %s_x(t) = " itemName
-    , input_ [ size_ "80", value_ (ms $ showRX "t" $ curve ^. curve2D_x), onChange $ act_on_x]
-    , br_ []
-    , text $ s2ms $ printf "Curve %s_y(t) = " itemName
-    , input_ [ size_ "80", value_ (ms $ showRX "t" $ curve ^. curve2D_y), onChange $ act_on_y]
-    , br_ []
-    , input_ [ size_ "8", value_ (ms $ curve ^. curve2D_dom . _1), onChange $ act_on_t _1]
-    , text " <= t <= "
-    , input_ [ size_ "8", value_ (ms $ curve ^. curve2D_dom . _2), onChange $ act_on_t _2]
-    , br_ []
-    ]
-    ++ viewPlotAccuracy itemName s
-    where
-    curve =
-      case _state_items ^. at itemName of
-        Just (PlotItem_Curve c) -> c
-        _ -> defaultCurve2D
-    act_on_x fMS =
-      case (parseRX "t" $ fromMisoString fMS) of
-        Right rx -> NewPlotItem (itemName, PlotItem_Curve $ curve & curve2D_x .~ rx)
-        Left _errmsg -> NoOp -- TODO
-    act_on_y fMS =
-      case (parseRX "t" $ fromMisoString fMS) of
-        Right rx -> NewPlotItem (itemName, PlotItem_Curve $ curve & curve2D_y .~ rx)
-        Left _errmsg -> NoOp -- TODO
-    act_on_t domlens tMS =
-      case reads (fromMisoString tMS) of
-        [(t,_)] -> NewPlotItem (itemName, PlotItem_Curve $ curve & curve2D_dom . domlens .~ (d2q t))
-        _ -> NoOp
-
-viewPlotAccuracy :: ItemName -> State -> [View Action]
-viewPlotAccuracy itemName s@State{..} =
-    [
-      text $ s2ms $ printf "%s(x) accuracy ~ w/" itemName
-    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_targetYSegments $ pac), onChange $ act_on_targetYsegs ]
-    -- , br_ []
-    , text "  "
-    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_minXSegments $ pac), onChange $ act_on_minXsegs ]
-    , text " <= segments <= "
-    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_maxXSegments $ pac), onChange $ act_on_maxXsegs ]
-    , br_ []
-    ]
-    where
-    pac =
-      case s ^. state_item_accuracies . at itemName of
-        Just fpac -> fpac
-        _ -> defaultPlotAccuracy
-    act_on_targetYsegs =
-      act_on_plotAccuracy plotAccuracy_targetYsegments
-    act_on_maxXsegs =
-      act_on_plotAccuracy plotAccuracy_maxXSegments
-    act_on_minXsegs =
-      act_on_plotAccuracy plotAccuracy_minXSegments
-    act_on_plotAccuracy paclens nMS =
-        case reads (fromMisoString nMS) of
-            [(n,_)] -> NewAccuracy (itemName, fpac & paclens .~ n)
-                where
-                fpac =
-                  case (s ^. state_item_accuracies . at itemName) of
-                    Just fpac2 -> fpac2
-                    _ ->  defaultPlotAccuracy
-            _ -> NoOp
-
 
 h,w :: Integer
 w = 800

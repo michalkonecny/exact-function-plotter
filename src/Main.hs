@@ -477,6 +477,7 @@ viewAddItem _s@State{..} =
   , flip button_ [text "curve"] [ onClick (NewPlotItem (freshName "c", (PlotItem_Curve defaultCurve2D)))]
   , flip button_ [text "spiral"] [ onClick (NewPlotItem (freshName "spiral", (PlotItem_Curve spiral)))]
   , flip button_ [text "infty"] [ onClick (NewPlotItem (freshName "infty", (PlotItem_Curve infty)))]
+  , flip button_ [text "mesh"] [ onClick (NewPlotItem (freshName "mesh", (PlotItem_Curve mesh)))]
   , br_ []
   ]
   where
@@ -488,6 +489,7 @@ viewAddItem _s@State{..} =
       _ -> error "failed to find a default function name"
   spiral = Curve2D (0, 50) (rx "0.02*x*sin(x)") (rx "0.02*x*cos(x)")
   infty = Curve2D (0, 6.29) (rx "0.8*sin(x)") (rx "0.5*sin(2*x)")
+  mesh = Curve2D (0, 6.29) (rx "0.8*sin(5*x)") (rx "0.5*sin(12*x)")
   
 
 viewItemList :: State -> [View Action]

@@ -37,7 +37,7 @@ import Miso.String (MisoString, ms, fromMisoString, ToMisoString(..))
 -- import Data.Aeson.Types
 
 -- Javascript Canvas
-import JavaScript.Web.Canvas as Canvas
+import JavaScript.Web.Canvas as Canvas hiding (Left, Right)
 
 import qualified Data.CDAR as CDAR
 -- import Data.CDAR (Dyadic)

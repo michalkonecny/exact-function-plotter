@@ -21,6 +21,7 @@ executable function-plotter
       Rectangle
       Expression
       Curve
+      AffineFractal
     build-depends:
         base < 5, 
         containers, time, mtl,

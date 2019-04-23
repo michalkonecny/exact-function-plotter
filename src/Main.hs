@@ -623,7 +623,10 @@ viewCurveControls itemName s@State{..} =
 viewFractalControls :: ItemName -> State -> [View Action]
 viewFractalControls itemName s@State{..} =
     [
-      text $ s2ms $ printf "Fractal %s, curves:" itemName
+      text $ s2ms $ printf "Fractal %s, plot depth:" itemName
+    , input_ [ size_ "2", value_ (ms $ depth), onChange $ act_on_depth]
+    , br_ []
+    , text $ s2ms $ printf "Fractal %s, curves:" itemName
     , br_ []
     ]
     ++ (concat $ map viewCurve $ zip [1..] curves) ++
@@ -638,12 +641,16 @@ viewFractalControls itemName s@State{..} =
       case _state_items ^. at itemName of
         Just (PlotItem_Fractal fr) -> fr
         _ -> defaultFractal
-    AffineFractal curves transforms depth bounds = fractal
+    AffineFractal curves _transforms depth _bounds = fractal
     viewCurve (i,curve) =
        viewEmbeddedCurveControls curve mkAction (itemName ++ "_curve" ++ show i) s
        where
        mkAction c = 
         NewPlotItem (itemName, PlotItem_Fractal $ fractal & affineFractal_curves . ix (i-1) .~ c)
+    act_on_depth dMS =
+      case (reads $ fromMisoString dMS) of
+        [(d,"")] -> NewPlotItem (itemName, PlotItem_Fractal $ fractal & affineFractal_depth .~ d)
+        _ -> NoOp
 
 viewPlotAccuracy :: ItemName -> State -> [View Action]
 viewPlotAccuracy itemName s@State{..} =

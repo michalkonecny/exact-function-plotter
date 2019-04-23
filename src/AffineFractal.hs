@@ -42,10 +42,12 @@ affineFractal_bounds wrap (AffineFractal a b c d) = fmap (\d' -> AffineFractal a
 defaultFractal :: AffineFractal
 defaultFractal =
   AffineFractal 
-    [Curve2D (0,1) (s2rx "0") (s2rx "x-1")] 
-    [((0.5,-0.5,-0.5),(0.5,0.5,0.5),(0,0,1))] 
-    3 
-    (Rectangle (-1) (-1) 0 0.5)
+    [Curve2D (0,0.5) (s2rx "0") (s2rx "x-0.5")] 
+    [
+      ((0.5,-0.5,-0.25),(0.5,0.5,0.25),(0,0,1))
+    ] 
+    2
+    (Rectangle (-0.625) 0 (-0.5) 0.25)
 
 -- affineFractal :: [Curve2D] -> [AffineTransform Rational] -> Int -> AffineFractal
 -- affineFractal curves transforms depth =

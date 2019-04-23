@@ -456,8 +456,33 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
   yPrec = 10 + (round $ negate $ logBase 2 (yTolerance))
 
 computeFractalEnclosure :: AffineFractal -> PlotArea -> PlotAccuracy -> PAEnclosure
-computeFractalEnclosure fr plotArea plotAccuracy =
-  undefined -- TODO
+computeFractalEnclosure fractal plotArea plotAccuracy =
+  enclosure0
+  ++ (concat $ map (applyTransform enclosure0) $ concat transforms)
+  ++ (concat $ map (applyTransform [boundsEncl]) lastLayerTransfroms)
+  where
+  AffineFractal curves transformations depth (Rectangle l r d u) = fractal
+  boundsEncl = [(l,d), (r,d), (r,u), (l,u)]
+  enclosure0 = 
+    concat $ map encloseCurve curves
+  encloseCurve curve =
+    computeEnclosure (PlotItem_Curve curve) plotArea plotAccuracy (curve ^. curve2D_dom)
+  transformationsToDepth n
+    | n <= 1 = [transformations]
+    | otherwise =
+      [ t `aftCompose` tPrev | t <- transformations, tPrev <- prevLayer] : prevTransformations
+    where
+    prevTransformations@(prevLayer :_) = transformationsToDepth (n-1)
+  (lastLayerTransfroms : transforms) = transformationsToDepth depth
+  applyTransform encl (vx,vy,_) =
+    map (map applyOnPt) encl
+    where
+    applyOnPt (x,y) = 
+      (vx `v3prod` (x,y,1)
+      ,vy `v3prod` (x,y,1))
+
+
+
 
 ---------------------------------------------------------------------------------
 --- VIEW

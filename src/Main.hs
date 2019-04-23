@@ -129,7 +129,7 @@ type PlotArea = Rectangle Rational
 
 type PAEnclosure = [PASegment]
 
-type PASegment = (Rectangle Rational, Rectangle Rational)
+type PASegment = [(Rational, Rational)] -- closed polyline
 
 data Action
   = NoOp
@@ -377,13 +377,13 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
     (lrEnclosure0, good0, lrEnclosure1, good1) =
       case plotItem of
         (PlotItem_Function rx) ->
-          (e0, w0 <= yTolerance, e1, w1 <= yTolerance)
+          (hull0 e0, w0 <= yTolerance, fmap (uncurry hullTwoRects) e1, w1 <= yTolerance)
           where
           (e1, e0) = encloseSegment rx (l,r)
           w0 = enclosure0Width e0
           w1 = enclosure1Width rx e1
         (PlotItem_Curve (Curve2D _dom rx_x rx_y)) ->
-          (e0, g0, e1, g1)
+          (hull0 e0, g0, fmap (uncurry hullTwoRects) e1, g1)
           where
           e0 = combine_exy e0x e0y
           e1 = combine_exy e1x e1y
@@ -401,6 +401,8 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
             Just (Rectangle xiLL xiLR yiLL yiLR, Rectangle xiRL xiRR yiRL yiRR)
           combine_exy _ _ = Nothing
         (PlotItem_Fractal _) -> error "computeEnclosure called for a fractal"
+    hull0 (Just (Rectangle xiL _ _ _, Rectangle _ xiR yiL yiR)) = Just [(xiL, yiL), (xiR, yiL), (xiR, yiR), (xiL, yiR)]
+    hull0 _ = Nothing
     enclosure0Width (Just (_, Rectangle _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
     enclosure0Width _ = yWd
     -- tol1Vert = enclosure1VertTolerance lrEnclosure1
@@ -796,7 +798,7 @@ viewPlot State {..} =
     renderEnclosure (itemName, enclosure) =
       map renderSegment enclosure
       where
-      renderSegment (rect1, rect2) =
+      renderSegment pointsPre =
         polygon_  (points_ pointsMS : style) []
         where
         style =
@@ -809,7 +811,7 @@ viewPlot State {..} =
         showPoint (x,y) = showR x ++ "," ++ showR y
         showR :: Rational -> String
         showR q = show $ (fromRational q :: Double)
-        points = map transformPt $ hullTwoRects rect1 rect2
+        points = map transformPt pointsPre
 
 q2d :: Rational -> Double
 q2d = fromRational

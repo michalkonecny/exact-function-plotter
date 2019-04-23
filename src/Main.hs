@@ -323,13 +323,21 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
     plotArea_x pa = (xL, xR)
       where
       (Rectangle xL xR _ _) = pa
+  
+  isFunction =
+    case plotItem of
+      PlotItem_Function _ -> True
+      _ -> False
 
   sendNewEnclosureSegments isPanned plotArea plotAccuracy dom =
     writeChan actionChan
       (NewEnclosureSegments (name, shouldAppend, enclosure))
     where
-    shouldAppend = isPanned
-    enclosure = computeEnclosure plotItem plotArea plotAccuracy dom
+    shouldAppend = isFunction && isPanned
+    enclosure =
+      case plotItem of
+        PlotItem_Fractal fr -> computeFractalEnclosure fr plotArea plotAccuracy
+        _ -> computeEnclosure plotItem plotArea plotAccuracy dom
 
 computeEnclosure :: PlotItem -> PlotArea -> PlotAccuracy -> (Rational, Rational) -> PAEnclosure
 computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
@@ -392,6 +400,7 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
             (Just (Rectangle _ _ yiLL yiLR, Rectangle _ _ yiRL yiRR)) =
             Just (Rectangle xiLL xiLR yiLL yiLR, Rectangle xiRL xiRR yiRL yiRR)
           combine_exy _ _ = Nothing
+        (PlotItem_Fractal _) -> error "computeEnclosure called for a fractal"
     enclosure0Width (Just (_, Rectangle _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
     enclosure0Width _ = yWd
     -- tol1Vert = enclosure1VertTolerance lrEnclosure1
@@ -444,6 +453,10 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
   xPrec = 10 + (round $ negate $ logBase 2 (minSegSize))
   yPrec = 10 + (round $ negate $ logBase 2 (yTolerance))
 
+computeFractalEnclosure :: AffineFractal -> PlotArea -> PlotAccuracy -> PAEnclosure
+computeFractalEnclosure fr plotArea plotAccuracy =
+  undefined -- TODO
+
 ---------------------------------------------------------------------------------
 --- VIEW
 ---------------------------------------------------------------------------------
@@ -472,8 +485,8 @@ viewAddItem _s@State{..} =
   [
     text "Add: "
   , flip button_ [text "function"] [ onClick (NewPlotItem (freshName "f", (PlotItem_Function RXVarX)))]
-  , flip button_ [text "sin(10x^2)"] [ onClick (NewPlotItem (freshName "sin(10x^2)", (PlotItem_Function (rx "sin(10*x^2)"))))]
-  , flip button_ [text "x*sin(10/x)"] [ onClick (NewPlotItem (freshName "x*sin(10/x)", (PlotItem_Function (rx "x*sin(10/x)"))))]
+  , flip button_ [text "sin(10x^2)"] [ onClick (NewPlotItem (freshName "sin(10x^2)", (PlotItem_Function (s2rx "sin(10*x^2)"))))]
+  , flip button_ [text "x*sin(10/x)"] [ onClick (NewPlotItem (freshName "x*sin(10/x)", (PlotItem_Function (s2rx "x*sin(10/x)"))))]
   , text "; "
   , flip button_ [text "curve"] [ onClick (NewPlotItem (freshName "c", (PlotItem_Curve defaultCurve2D)))]
   , flip button_ [text "spiral"] [ onClick (NewPlotItem (freshName "spiral", (PlotItem_Curve spiral)))]
@@ -485,14 +498,13 @@ viewAddItem _s@State{..} =
   ]
   where
   itemNames = Map.keys _state_items
-  rx s = case parseRX "x" s of Right r -> r; _ -> RXVarX 
   freshName prefix =
     case find (not . flip elem itemNames) $ prefix : [ prefix ++ show (i :: Int) | i <- [2..] ] of
       Just nm -> nm
       _ -> error "failed to find a default function name"
-  spiral = Curve2D (0, 50) (rx "0.02*x*sin(x)") (rx "0.02*x*cos(x)")
-  infty = Curve2D (0, 6.29) (rx "0.8*sin(x)") (rx "0.5*sin(2*x)")
-  mesh = Curve2D (0, 6.29) (rx "0.8*sin(5*x)") (rx "0.5*sin(12*x)")
+  spiral = Curve2D (0, 50) (s2rx "0.02*x*sin(x)") (s2rx "0.02*x*cos(x)")
+  infty = Curve2D (0, 6.29) (s2rx "0.8*sin(x)") (s2rx "0.5*sin(2*x)")
+  mesh = Curve2D (0, 6.29) (s2rx "0.8*sin(5*x)") (s2rx "0.5*sin(12*x)")
   
 
 viewItemList :: State -> [View Action]
@@ -543,7 +555,7 @@ viewFnControls itemName s@State{..} =
         Left _errmsg -> NoOp -- TODO
 
 viewEmbeddedCurveControls :: Curve2D -> (Curve2D -> Action) -> String -> State -> [View Action]
-viewEmbeddedCurveControls curve mkAction curveName s@State{..} =
+viewEmbeddedCurveControls curve mkAction curveName _s@State{..} =
     [
       text $ s2ms $ printf "Curve %s_x(t) = " curveName
     , input_ [ size_ "80", value_ (ms $ showRX "t" $ curve ^. curve2D_x), onChange $ act_on_x]
@@ -595,11 +607,11 @@ viewFractalControls itemName s@State{..} =
     -- ++ (concat $ map viewTransform $ zip [1..] transforms) -- TODO
     ++ viewPlotAccuracy itemName s
     where
-    AffineFractal curves transforms = fractal
     fractal =
       case _state_items ^. at itemName of
         Just (PlotItem_Fractal fr) -> fr
         _ -> defaultFractal
+    AffineFractal curves transforms depth bounds = fractal
     viewCurve (i,curve) =
        viewEmbeddedCurveControls curve mkAction (itemName ++ "_curve" ++ show i) s
        where

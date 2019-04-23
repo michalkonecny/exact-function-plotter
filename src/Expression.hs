@@ -47,6 +47,13 @@ data RX =
   | RXBin BinOp RX RX
   deriving (Show, Eq, Ord)
 
+s2rx :: String -> RX
+s2rx s = 
+  case parseRX "x" s of 
+    Right r -> r
+    Left errMsg -> 
+      error $ printf "failed to parse:\n  %s\n  %s" s (show errMsg)
+
 data Constant = Pi | E
   deriving (Show, Eq, Ord)
 data UnOp = Neg | PowI Integer | Sqrt | Exp | Log | Sine | Cosine | Tan

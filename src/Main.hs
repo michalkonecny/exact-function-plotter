@@ -656,10 +656,10 @@ hQ = toRational h
 wQ = toRational w
 
 drawRect :: Double -> Double -> Double -> Double -> IO ()
-drawRect x y xS yS = 
+drawRect x y w h = 
   do
   ctx <- getCtx
-  fillRect x y xS yS ctx
+  fillRect x y w h ctx
   save ctx
     
 viewPlot :: State -> [View Action]

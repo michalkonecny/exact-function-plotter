@@ -609,7 +609,7 @@ viewFractalControls itemName s@State{..} =
 viewPlotAccuracy :: ItemName -> State -> [View Action]
 viewPlotAccuracy itemName s@State{..} =
     [
-      text $ s2ms $ printf "%s(x) accuracy ~ w/" itemName
+      text $ s2ms $ printf "%s accuracy ~ w/" itemName
     , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_targetYSegments $ pac), onChange $ act_on_targetYsegs ]
     -- , br_ []
     , text "  "

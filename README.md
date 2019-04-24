@@ -4,6 +4,8 @@ A web-browser widget for plotting rigorously computed arbitrarily-accurate enclo
 
 [Try it now](http://duck.aston.ac.uk/konecnym/plotter/)
 
+Also, see the screenshots folder.
+
 _Beware: Work in progress. Currently the UI and plotting is very slow._
 
 <!-- Screenshots: -->

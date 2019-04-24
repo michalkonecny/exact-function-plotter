@@ -14,7 +14,7 @@ import Control.Lens
 -- import qualified Data.Map as Map
 
 
-import Data.CDAR
+-- import Data.CDAR
 
 import Rectangle
 import Expression
@@ -91,9 +91,9 @@ instance CanAffineTransform Rational where
   addAT = (+)
   mulAT = (*)
 
-instance CanAffineTransform Approx where
-  addAT = (+)
-  mulAT = (*)
+-- instance CanAffineTransform Approx where
+--   addAT = (+)
+--   mulAT = (*)
 
 type Vector3 t = (t, t, t)
 
@@ -109,10 +109,17 @@ v3prod (a0,a1,a2) (b0,b1,b2) = (a0*:b0) +: (a1*:b1) +: (a2*:b2)
 type AffineTransform t = (Vector3 t, Vector3 t, Vector3 t)
    -- 3 x 3 matrix, row-major
 
-aftMap :: (a -> b) -> AffineTransform a -> AffineTransform b
-aftMap f (v0,v1,v2) = (fv v0, fv v1, fv v2)
-  where
-  fv = v3map f
+-- aftMap :: (a -> b) -> AffineTransform a -> AffineTransform b
+-- aftMap f (v0,v1,v2) = (fv v0, fv v1, fv v2)
+--   where
+--   fv = v3map f
+
+aftIdentity :: AffineTransform Rational
+aftIdentity =
+  ((1,0,0),
+   (0,1,0),
+   (0,0,1))
+
 
 aftTranspose :: AffineTransform t -> AffineTransform t
 aftTranspose

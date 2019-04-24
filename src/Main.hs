@@ -468,7 +468,7 @@ computeFractalEnclosure fractal plotArea plotAccuracy =
   encloseCurve curve =
     computeEnclosure (PlotItem_Curve curve) plotArea plotAccuracy (curve ^. curve2D_dom)
   transformationsToDepth n
-    | n <= 1 = [transformations]
+    | n <= 0 = [[aftIdentity]]
     | otherwise =
       [ t `aftCompose` tPrev | t <- transformations, tPrev <- prevLayer] : prevTransformations
     where
@@ -495,6 +495,7 @@ viewState s@State{..} =
       Miso.style_ (Map.singleton "font-size" "20pt")
     ] $
     []
+    ++ viewHeader
     ++ viewPlotAreaControls s
     ++ viewPlot s
     ++ viewAddItem s
@@ -506,6 +507,33 @@ viewState s@State{..} =
 instance ToMisoString Rational where
   toMisoString q = s2ms $ printf "%.4f" (q2d q)
   fromMisoString _ = error "fromMisoString not defined for Rational"
+
+viewHeader :: [View Action]
+viewHeader =
+  [
+    div_ 
+    [  
+      Miso.style_ (Map.singleton "font-size" "32pt")
+    ] 
+    [
+      hr_ []
+    , text "Exact function/curve/fractal plotter"
+    ]
+    , Miso.a_ [ href_ "https://github.com/michalkonecny/exact-function-plotter" ] [text "(github)"]
+    , hr_ []
+    ,
+    text "2019, Michal Konečný, Aston University, Birmingham UK"
+    , br_ []
+    , text "built using "
+    , Miso.a_ [ href_ "https://github.com/jensblanck/cdar" ] [ text "CDAR" ]
+    , text " "
+    , Miso.a_ [ href_ "https://github.com/michalkonecny/cdar/tree/mBound-noshift" ] [ text "(MK's fork)" ]
+    , text ", "
+    , Miso.a_ [ href_ "https://haskell-miso.org/" ] [ text "Miso" ]
+    , text ", "
+    , Miso.a_ [ href_ "https://www.haskell.org/" ] [ text "Haskell" ]
+    , hr_ []
+  ]
 
 viewAddItem :: State -> [View Action]
 viewAddItem _s@State{..} =

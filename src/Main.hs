@@ -23,7 +23,7 @@ import Language.Javascript.JSaddle (runJSaddle)
 
 import Text.Printf
 
-import Data.List (intercalate, find)
+import Data.List (find)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 -- import Data.Ratio ((%))
@@ -194,6 +194,7 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
     (NewPlotArea pa) ->
       ((s & state_plotArea .~ pa) <#) $ liftIO $ do
         atomically $ writeTVar plotAreaTV pa
+        _ <- canvasDrawPlot s
         return NoOp
     (NewAccuracy (name, pac)) ->
       ((s & state_item_accuracies . at name .~ Just pac) <#) $ liftIO $ do
@@ -202,10 +203,10 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
           case pacMap ^. at name of
             Just pacTV -> writeTVar pacTV pac
             _ -> pure ()
+        _ <- canvasDrawPlot s
         return NoOp
     (NewPlotItem (name, plotItem)) ->
       (s' <#) $ liftIO $ do
-        drawRect 0 0 10 100
         fnPlotAccuracyTV <- atomically $ do
           fnPlotAccuracyTV <- newTVar plotAccuracy
           paMap <- readTVar plotAccuracyTV
@@ -232,8 +233,9 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
     (NewWorker (name, tid)) ->
       noEff $ s & state_item_workers . at name .~ Just tid
     (NewEnclosureSegments (name, shouldAppend, encl)) ->
-      noEff $
-        s & state_item_encls . at name %~ addEncl
+        ((s & state_item_encls . at name %~ addEncl) <#) $ liftIO $ do
+          _ <- canvasDrawPlot s
+          return NoOp
       where
       addEncl (Just oldEncl)
         | shouldAppend = Just $ oldEncl ++ encl
@@ -267,7 +269,9 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
     --         in
     --         Rectangle (xL - xd) (xR - xd) (yL + yd) (yR + yd)
     --       _ -> extents
-    SelectItem maybeItemName -> noEff $ s & state_selectedItem .~ maybeItemName
+    SelectItem maybeItemName -> ((s & state_selectedItem .~ maybeItemName) <#) $ liftIO $ do
+      _ <- canvasDrawPlot s
+      return NoOp
     NoOp -> noEff s
 
 
@@ -655,17 +659,37 @@ hQ, wQ :: Rational
 hQ = toRational h
 wQ = toRational w
 
-drawRect :: Double -> Double -> Double -> Double -> IO ()
-drawRect x y w h = 
-  do
+hD, wD :: Double
+hD = fromInteger h
+wD = fromInteger w
+
+drawRectangle :: [(Rational, Rational)] -> IO ()
+drawRectangle [(x1, y1), (x2, y2), (x3, y3), (x4, y4), (x5, y5), (x6, y6)] = do
   ctx <- getCtx
-  fillRect x y w h ctx
+  beginPath ctx
+  moveTo (q2d x1) (q2d y1) ctx
+  lineTo (q2d x2) (q2d y2) ctx
+  lineTo (q2d x3) (q2d y3) ctx
+  lineTo (q2d x4) (q2d y4) ctx
+  lineTo (q2d x5) (q2d y5) ctx
+  lineTo (q2d x6) (q2d y6) ctx
+  lineTo (q2d x1) (q2d y1) ctx
+  fillStyle 255 170 128 1 ctx
+  fill ctx
+  stroke ctx
   save ctx
-    
+
+clearCanvas :: IO ()
+clearCanvas = do
+  ctx <-getCtx
+  clearRect 0 0 hD wD ctx
+  save ctx
+
+
 viewPlot :: State -> [View Action]
 viewPlot State {..} =
     [
-        -- text (ms transformS),
+        -- text $ ms $ show $ map getPoints $ moveSelectedLast $ Map.toList _state_item_encls,
         div_
           [
             Miso.style_ (Map.singleton "font-size" "12pt")
@@ -679,9 +703,9 @@ viewPlot State {..} =
           ]
           [
             canvas_ 
-              [ id_ "canvas",
-                width_ "800",
-                height_ "800",
+              [ Miso.id_ "canvas",
+                Miso.width_ $ ms $ show w,
+                Miso.height_ $ ms $ show h,
                 Miso.style_ (Map.singleton "border" "1px solid black")
                 ] $ []
                 -- [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
@@ -709,6 +733,7 @@ viewPlot State {..} =
     --       case reads (fromMisoString s) of
     --         [(i,"")] -> Zoom (round (i :: Double))
     --         _ -> NoOp
+
     -- moveSelectedLast = aux Nothing
     --   where
     --   aux (Just sel) [] = [sel]
@@ -729,11 +754,11 @@ viewPlot State {..} =
     -- xGuides =
     --   [ let xiMS = ms (q2d $ transformX xi) in
     --     [line_
-    --      [x1_ xiMS, x2_ xiMS, y1_ "0", y2_ (ms (q2d hQ)),
+    --       [x1_ xiMS, x2_ xiMS, y1_ "0", y2_ (ms (q2d hQ)),
     --       stroke_ "black", strokeDasharray_ "1 3"
-    --      ] []
-    --      ,
-    --      text_ [x_ xiMS, y_ (ms (q2d hQ - 20))] [text (ms (q2d xi))]
+    --       ] []
+    --       ,
+    --       text_ [x_ xiMS, y_ (ms (q2d hQ - 20))] [text (ms (q2d xi))]
     --     ]
     --   | xi <- xGuidePoints
     --   ]
@@ -744,11 +769,11 @@ viewPlot State {..} =
     -- yGuides =
     --   [ let yiMS = ms (q2d $ transformY yi) in
     --     [line_
-    --      [y1_ yiMS, y2_ yiMS, x1_ "0", x2_ (ms (q2d wQ)),
+    --       [y1_ yiMS, y2_ yiMS, x1_ "0", x2_ (ms (q2d wQ)),
     --       stroke_ "black", strokeDasharray_ "1 3"
-    --      ] []
-    --      ,
-    --      text_ [y_ yiMS, x_ (ms (q2d wQ - 30))] [text (ms (q2d yi))]
+    --       ] []
+    --       ,
+    --       text_ [y_ yiMS, x_ (ms (q2d wQ - 30))] [text (ms (q2d yi))]
     --     ]
     --   | yi <- yGuidePoints
     --   ]
@@ -756,6 +781,11 @@ viewPlot State {..} =
     --   yGuidePoints = [y1, y1+gran .. yR]
     --   gran = 10.0 ^^ (round $ logBase 10 (q2d $ (yR - yL)/10) :: Int)
     --   y1 = gran * (fromInteger $ ceiling (yL / gran)) :: Rational
+
+    -- getPoints (_, enclosure) =
+    --   map transformSegment enclosure
+    --   where
+    --     transformSegment (rect1, rect2) = map transformPt $ hullTwoRects rect1 rect2
 
     -- renderEnclosure (itemName, enclosure) =
     --   map renderSegment enclosure
@@ -774,6 +804,31 @@ viewPlot State {..} =
     --     showR :: Rational -> String
     --     showR q = show $ (fromRational q :: Double)
     --     points = map transformPt $ hullTwoRects rect1 rect2
+
+canvasDrawPlot :: State -> IO [()]
+canvasDrawPlot State {..} = do
+    _ <- clearCanvas
+    mapM drawRectangle $ head $ map getPoints $ moveSelectedLast $ Map.toList _state_item_encls
+    where
+    moveSelectedLast = aux Nothing
+      where
+      aux (Just sel) [] = [sel]
+      aux _ [] = []
+      aux msel (this@(itemName, _):rest)
+        |  _state_selectedItem == Just itemName =
+          aux (Just this) rest
+        | otherwise =
+          this : aux msel rest
+
+    Rectangle xL xR yL yR = _state_plotArea
+    transformPt (x,y) = (transformX x, transformY y)
+    transformX x = (x-xL)*wQ/(xR-xL)
+    transformY y = hQ-(y-yL)*hQ/(yR-yL)
+
+    getPoints (_, enclosure) =
+      map transformSegment enclosure
+      where
+        transformSegment (rect1, rect2) = map transformPt $ hullTwoRects rect1 rect2
 
 q2d :: Rational -> Double
 q2d = fromRational

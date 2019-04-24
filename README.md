@@ -2,8 +2,8 @@
 
 A web-browser widget for plotting rigorously computed arbitrarily-accurate enclosures of function graphs, parametric curves and fractals defined by curves and affine transformations.
 
-![infinitely many waves](README-images/xsinrecipx.png)
-![umbrella-like fractal](README-images/umbrella.png)
+<img src="README-images/xsinrecipx.png" alt="infinitely many waves" height="200" width="300">
+<img src="README-images/umbrella.png" alt="umbrella-like fractal" height="200" width="300">
 
 [Try it now](http://duck.aston.ac.uk/konecnym/plotter/)
 

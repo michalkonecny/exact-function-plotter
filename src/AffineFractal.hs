@@ -40,7 +40,7 @@ affineFractal_bounds :: Lens' AffineFractal (Rectangle Rational)
 affineFractal_bounds wrap (AffineFractal a b c d) = fmap (\d' -> AffineFractal a b c d') (wrap d)
 
 defaultFractal :: AffineFractal
-defaultFractal = treeFractal
+defaultFractal = lampFractal
 
 lampFractal :: AffineFractal
 lampFractal =
@@ -49,7 +49,7 @@ lampFractal =
     [
       ((0.5,-0.5,-0.25),(0.5,0.5,0.25),(0,0,1))
     ] 
-    10
+    5
     (Rectangle (-0.625) 0 (-0.5) 0.25)
 
 treeFractal :: AffineFractal
@@ -60,8 +60,19 @@ treeFractal =
       ((0.5,-0.5,-0.25),(0.5,0.5,0.25),(0,0,1))
     , ((0.5,0.5,0.25),(-0.5,0.5,0.25),(0,0,1))
     ] 
-    10
+    5
     (Rectangle (-1) 1 (-0.5) 1)
+
+umbrellaFractal :: AffineFractal
+umbrellaFractal =
+  AffineFractal 
+    [Curve2D (0,1) (s2rx "0") (s2rx "x-1")] 
+    [
+      ((0.5,-0.25,-0.25),(0.5,0.25,0.25),(0,0,1))
+    , ((0.5,0.25,0.25),(-0.5,0.25,0.25),(0,0,1))
+    ] 
+    5
+    (Rectangle (-0.6) 0.6 (-1) 0.6)
 
 
 

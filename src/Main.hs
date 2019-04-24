@@ -521,6 +521,8 @@ viewAddItem _s@State{..} =
   , flip button_ [text "mesh"] [ onClick (NewPlotItem (freshName "mesh", (PlotItem_Curve mesh)))]
   , text "; "
   , flip button_ [text "fractal"] [ onClick (NewPlotItem (freshName "fr", (PlotItem_Fractal defaultFractal)))]
+  , flip button_ [text "tree"] [ onClick (NewPlotItem (freshName "tree", (PlotItem_Fractal treeFractal)))]
+  , flip button_ [text "umbr"] [ onClick (NewPlotItem (freshName "umbr", (PlotItem_Fractal umbrellaFractal)))]
   , br_ []
   ]
   where

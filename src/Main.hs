@@ -787,10 +787,13 @@ viewPlot State {..} =
     --     showR q = show $ (fromRational q :: Double)
     --     points = map transformPt $ hullTwoRects rect1 rect2
 
-canvasDrawPlot :: State -> IO [()]
+canvasDrawPlot :: State -> IO ()
 canvasDrawPlot State {..} = do
-    _ <- clearCanvas
-    mapM drawPolygon $ head $ map getPoints $ moveSelectedLast $ Map.toList _state_item_encls
+    ctx <- getCtx
+    clearCanvas ctx
+    -- Canvas.transform ctx
+    mapM_ (drawPolygon ctx) $ head $ map getPoints $ moveSelectedLast $ Map.toList _state_item_encls
+    save ctx
     where
     moveSelectedLast = aux Nothing
       where
@@ -812,9 +815,8 @@ canvasDrawPlot State {..} = do
       where
         transformSegment (rect1, rect2) = map transformPt $ hullTwoRects rect1 rect2
 
-drawPolygon :: [(Rational, Rational)] -> IO ()
-drawPolygon ((x1,y1):points) = do
-  ctx <- getCtx
+-- drawPolygon :: [(Rational, Rational)] -> IO ()
+drawPolygon ctx ((x1,y1):points) = do
   beginPath ctx
   moveTo (q2d x1) (q2d y1) ctx
   mapM_ (\(xi,yi) -> lineTo (q2d xi) (q2d yi) ctx) points
@@ -822,13 +824,10 @@ drawPolygon ((x1,y1):points) = do
   fillStyle 255 170 128 1 ctx
   fill ctx
   stroke ctx
-  save ctx
 
-clearCanvas :: IO ()
-clearCanvas = do
-  ctx <-getCtx
+-- clearCanvas :: IO ()
+clearCanvas ctx = do
   clearRect 0 0 hD wD ctx
-  save ctx
 
 q2d :: Rational -> Double
 q2d = fromRational

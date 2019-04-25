@@ -13,8 +13,8 @@ These graphical enclosures can be computed to an *arbitrarily high accuracy*.
 In the images below the same objects are plotted with a *low accuracy* so that the shapes are easy to see.
 
 <div>
-<img src="README-images/xsinrecipx-inaccurate-over-accurate.png" alt="infinitely many waves" height="200" width="300">
-<img src="README-images/umbrella-inaccurate-over-accurate.png" alt="umbrella-like fractal" height="200" width="300">
+<img src="README-images/xsinrecipx-inaccurate-above-accurate.png" alt="infinitely many waves" height="200" width="300">
+<img src="README-images/umbrella-inaccurate-above-accurate.png" alt="umbrella-like fractal" height="200" width="300">
 </div>
 
 [Try it now](http://duck.aston.ac.uk/konecnym/plotter/)

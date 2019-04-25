@@ -1,6 +1,6 @@
 # Exact Function/Curve/Fractal Plotter
 
-A web-browser widget for plotting rigorously computed arbitrarily-accurate enclosures of function graphs, parametric curves and fractals defined by curves and affine transformations.
+A web-browser widget for reliably plotting function graphs, parametric curves and certain fractals.
 
 <div>
 <img src="README-images/xsinrecipx-accurate.png" alt="infinitely many waves" height="200" width="300">

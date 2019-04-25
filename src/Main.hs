@@ -192,19 +192,23 @@ updateState :: (Chan Action) -> (TVar PlotArea) -> (TVar (Map.Map ItemName (TVar
 updateState actionChan plotAreaTV plotAccuracyTV s action =
   case action of
     (NewPlotArea pa) ->
-      ((s & state_plotArea .~ pa) <#) $ liftIO $ do
+      (s' <#) $ liftIO $ do
         atomically $ writeTVar plotAreaTV pa
-        _ <- canvasDrawPlot s
+        _ <- canvasDrawPlot s'
         return NoOp
+      where
+      s' = s & state_plotArea .~ pa
     (NewAccuracy (name, pac)) ->
-      ((s & state_item_accuracies . at name .~ Just pac) <#) $ liftIO $ do
+      (s' <#) $ liftIO $ do
         atomically $ do
           pacMap <- readTVar plotAccuracyTV
           case pacMap ^. at name of
             Just pacTV -> writeTVar pacTV pac
             _ -> pure ()
-        _ <- canvasDrawPlot s
+        _ <- canvasDrawPlot s'
         return NoOp
+        where
+        s' = s & state_item_accuracies . at name .~ Just pac
     (NewPlotItem (name, plotItem)) ->
       (s' <#) $ liftIO $ do
         fnPlotAccuracyTV <- atomically $ do
@@ -233,10 +237,11 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
     (NewWorker (name, tid)) ->
       noEff $ s & state_item_workers . at name .~ Just tid
     (NewEnclosureSegments (name, shouldAppend, encl)) ->
-        ((s & state_item_encls . at name %~ addEncl) <#) $ liftIO $ do
-          _ <- canvasDrawPlot s
+        (s' <#) $ liftIO $ do
+          _ <- canvasDrawPlot s'
           return NoOp
       where
+      s' = s & state_item_encls . at name %~ addEncl
       addEncl (Just oldEncl)
         | shouldAppend = Just $ oldEncl ++ encl
       addEncl _ = Just encl

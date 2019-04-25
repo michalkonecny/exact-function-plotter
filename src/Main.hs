@@ -663,29 +663,6 @@ hD, wD :: Double
 hD = fromInteger h
 wD = fromInteger w
 
-drawRectangle :: [(Rational, Rational)] -> IO ()
-drawRectangle [(x1, y1), (x2, y2), (x3, y3), (x4, y4), (x5, y5), (x6, y6)] = do
-  ctx <- getCtx
-  beginPath ctx
-  moveTo (q2d x1) (q2d y1) ctx
-  lineTo (q2d x2) (q2d y2) ctx
-  lineTo (q2d x3) (q2d y3) ctx
-  lineTo (q2d x4) (q2d y4) ctx
-  lineTo (q2d x5) (q2d y5) ctx
-  lineTo (q2d x6) (q2d y6) ctx
-  lineTo (q2d x1) (q2d y1) ctx
-  fillStyle 255 170 128 1 ctx
-  fill ctx
-  stroke ctx
-  save ctx
-
-clearCanvas :: IO ()
-clearCanvas = do
-  ctx <-getCtx
-  clearRect 0 0 hD wD ctx
-  save ctx
-
-
 viewPlot :: State -> [View Action]
 viewPlot State {..} =
     [
@@ -829,6 +806,28 @@ canvasDrawPlot State {..} = do
       map transformSegment enclosure
       where
         transformSegment (rect1, rect2) = map transformPt $ hullTwoRects rect1 rect2
+
+drawRectangle :: [(Rational, Rational)] -> IO ()
+drawRectangle [(x1, y1), (x2, y2), (x3, y3), (x4, y4), (x5, y5), (x6, y6)] = do
+  ctx <- getCtx
+  beginPath ctx
+  moveTo (q2d x1) (q2d y1) ctx
+  lineTo (q2d x2) (q2d y2) ctx
+  lineTo (q2d x3) (q2d y3) ctx
+  lineTo (q2d x4) (q2d y4) ctx
+  lineTo (q2d x5) (q2d y5) ctx
+  lineTo (q2d x6) (q2d y6) ctx
+  lineTo (q2d x1) (q2d y1) ctx
+  fillStyle 255 170 128 1 ctx
+  fill ctx
+  stroke ctx
+  save ctx
+
+clearCanvas :: IO ()
+clearCanvas = do
+  ctx <-getCtx
+  clearRect 0 0 hD wD ctx
+  save ctx
 
 q2d :: Rational -> Double
 q2d = fromRational

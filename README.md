@@ -21,7 +21,10 @@ In the images below the same objects are plotted with a **low accuracy** so that
 
 Also, see the [screenshots folder](screenshots) and [slides](regional-cstaster-MK-cid-slides.pdf) featuring plots produced by this tool.
 
-_Beware: Work in progress. Currently the UI and plotting is very slow._
+_Beware: Work in progress. Currently the UI and plotting is slow._
+
+I recommend to tune the plots with very low accuracy and increase accuracy only for the final rendering.
+In case of fractals, accurate rendering typically takes several minutes.
 
 <!-- Screenshots: -->
 

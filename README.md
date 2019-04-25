@@ -19,7 +19,7 @@ In the images below the same objects are plotted with a **low accuracy** so that
 
 [Try it now](http://duck.aston.ac.uk/konecnym/plotter/)
 
-Also, see the [screenshots folder](screenshots) and [slides](regional-cstaster-MK-cid-slides.pdf) featuring plots produced by this tool.
+Also, see the [screenshots folder](screenshots) and [slides for a school outreach](regional-cstaster-MK-cid-slides.pdf) featuring plots produced by this tool.
 
 _Beware: Work in progress. Currently the UI and plotting is slow._
 

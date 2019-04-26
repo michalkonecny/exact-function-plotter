@@ -91,6 +91,10 @@ instance CanAffineTransform Rational where
   addAT = (+)
   mulAT = (*)
 
+-- instance CanAffineTransform Double where
+--   addAT = (+)
+--   mulAT = (*)
+
 -- instance CanAffineTransform Approx where
 --   addAT = (+)
 --   mulAT = (*)
@@ -114,7 +118,7 @@ type AffineTransform t = (Vector3 t, Vector3 t, Vector3 t)
 --   where
 --   fv = v3map f
 
-aftIdentity :: AffineTransform Rational
+aftIdentity :: (Num a) => AffineTransform a
 aftIdentity =
   ((1,0,0),
    (0,1,0),

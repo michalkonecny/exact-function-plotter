@@ -71,7 +71,7 @@ data State
     , _state_items :: Map.Map ItemName PlotItem
     , _state_item_accuracies :: Map.Map ItemName PlotAccuracy
     , _state_item_workers :: Map.Map ItemName ThreadId
-    , _state_item_encls :: Map.Map ItemName PAEnclosure
+    , _state_item_encls :: Map.Map ItemName (PAEnclosure Double)
     -- , _state_plotArea_Movement :: PlotAreaMovement
   }
   deriving (Show, Eq)
@@ -88,7 +88,7 @@ state_item_accuracies :: Lens' State (Map.Map ItemName PlotAccuracy)
 state_item_accuracies wrap (State a b c d e f) = fmap (\d' -> State a b c d' e f) (wrap d)
 state_item_workers :: Lens' State (Map.Map ItemName ThreadId)
 state_item_workers wrap (State a b c d e f) = fmap (\e' -> State a b c d e' f) (wrap e)
-state_item_encls :: Lens' State (Map.Map ItemName PAEnclosure)
+state_item_encls :: Lens' State (Map.Map ItemName (PAEnclosure Double))
 state_item_encls wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
 -- state_plotArea_Movement :: Lens' State PlotAreaMovement
 -- state_plotArea_Movement wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
@@ -127,9 +127,9 @@ type PlotArea = Rectangle Rational
 -- plotAreaMovement_mousePos :: Lens' PlotAreaMovement (Maybe (Int, Int))
 -- plotAreaMovement_mousePos wrap (PlotAreaMovement a b) = fmap (\b' -> PlotAreaMovement a b') (wrap b)
 
-type PAEnclosure = [PASegment]
+type PAEnclosure t = [PASegment t]
 
-type PASegment = [(Rational, Rational)] -- closed polyline
+type PASegment t = [(t, t)] -- closed polyline
 
 data Action
   = NoOp
@@ -138,7 +138,7 @@ data Action
   | NewPlotItem !(ItemName, PlotItem)
   | NewAccuracy !(ItemName, PlotAccuracy)
   | NewWorker !(ItemName, ThreadId)
-  | NewEnclosureSegments !(ItemName, Bool, PAEnclosure)
+  | NewEnclosureSegments !(ItemName, Bool, PAEnclosure Double)
   -- | SetDrag Bool
   deriving (Show, Eq)
 
@@ -331,7 +331,7 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
 
   sendNewEnclosureSegments isPanned plotArea plotAccuracy dom =
     writeChan actionChan
-      (NewEnclosureSegments (name, shouldAppend, enclosure))
+      (NewEnclosureSegments (name, shouldAppend, qe2de enclosure))
     where
     shouldAppend = isFunction && isPanned
     enclosure =
@@ -339,7 +339,7 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
         PlotItem_Fractal fr -> computeFractalEnclosure fr plotArea plotAccuracy
         _ -> computeEnclosure plotItem plotArea plotAccuracy dom
 
-computeEnclosure :: PlotItem -> PlotArea -> PlotAccuracy -> (Rational, Rational) -> PAEnclosure
+computeEnclosure :: PlotItem -> PlotArea -> PlotAccuracy -> (Rational, Rational) -> (PAEnclosure Rational)
 computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
   enclosure
   where
@@ -455,7 +455,13 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
   xPrec = 10 + (round $ negate $ logBase 2 (minSegSize))
   yPrec = 10 + (round $ negate $ logBase 2 (yTolerance))
 
-computeFractalEnclosure :: AffineFractal -> PlotArea -> PlotAccuracy -> PAEnclosure
+qs2ds ::  [(Rational, Rational)] -> [(Double, Double)]
+qs2ds = map (\(x,y) -> (q2d x, q2d y))
+
+qe2de :: PAEnclosure Rational -> PAEnclosure Double
+qe2de = map qs2ds
+
+computeFractalEnclosure :: AffineFractal -> PlotArea -> PlotAccuracy -> (PAEnclosure Rational)
 computeFractalEnclosure fractal plotArea plotAccuracy =
   enclosure0
   ++ (concat $ map (applyTransform enclosure0) $ concat transforms)
@@ -823,7 +829,6 @@ viewPlot State {..} =
     viewWidthAttr = Svg.width_ (ms (q2d wQ))
     Rectangle xL xR yL yR = _state_plotArea
     -- [xLd, xRd, yLd, yRd] = map q2d [xL, xR, yL, yR]
-    transformPt (x,y) = (transformX x, transformY y)
     transformX x = (x-xL)*wQ/(xR-xL)
     transformY y = hQ-(y-yL)*hQ/(yR-yL)
     xGuides =
@@ -870,9 +875,12 @@ viewPlot State {..} =
             _ -> 
               [stroke_ "#707070", fill_ "#ffc0cb", fillOpacity_ "0.4"]
         pointsMS = ms $ intercalate " " $ map showPoint points
-        showPoint (x,y) = showR x ++ "," ++ showR y
-        showR :: Rational -> String
-        showR q = show $ (fromRational q :: Double)
+        showPoint (x,y) = show x ++ "," ++ show y
+        -- showR :: Rational -> String
+        -- showR q = show $ (fromRational q :: Double)
+        transformPt (x,y) = (transformXD x, transformYD y)
+        transformXD x = (x-(q2d xL))*(q2d $ wQ/(xR-xL))
+        transformYD y = (q2d hQ)-(y-(q2d yL))*(q2d $ hQ/(yR-yL))
         points = map transformPt pointsPre
 
 q2d :: Rational -> Double

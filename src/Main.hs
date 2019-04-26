@@ -71,10 +71,17 @@ data State
     , _state_items :: Map.Map ItemName PlotItem
     , _state_item_accuracies :: Map.Map ItemName PlotAccuracy
     , _state_item_workers :: Map.Map ItemName ThreadId
-    , _state_item_encls :: Map.Map ItemName (PAEnclosure Double)
+    , _state_item_encls :: Map.Map ItemName (Scaling, PAEnclosure Double)
+        -- the two rationals are x,y scaling factors, respectively
+        -- the coordinates in the enclosure have been multiplied by these factors before converting to Double
+        -- most of the time these factors agree with the plotting scale, allowing the coordinates to be used
+        -- for plotting after a translation
+
     -- , _state_plotArea_Movement :: PlotAreaMovement
   }
   deriving (Show, Eq)
+
+type Scaling = (Rational, Rational)
 
 -- makeLenses ''State
 
@@ -88,7 +95,7 @@ state_item_accuracies :: Lens' State (Map.Map ItemName PlotAccuracy)
 state_item_accuracies wrap (State a b c d e f) = fmap (\d' -> State a b c d' e f) (wrap d)
 state_item_workers :: Lens' State (Map.Map ItemName ThreadId)
 state_item_workers wrap (State a b c d e f) = fmap (\e' -> State a b c d e' f) (wrap e)
-state_item_encls :: Lens' State (Map.Map ItemName (PAEnclosure Double))
+state_item_encls :: Lens' State (Map.Map ItemName (Scaling, PAEnclosure Double))
 state_item_encls wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
 -- state_plotArea_Movement :: Lens' State PlotAreaMovement
 -- state_plotArea_Movement wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
@@ -138,7 +145,7 @@ data Action
   | NewPlotItem !(ItemName, PlotItem)
   | NewAccuracy !(ItemName, PlotAccuracy)
   | NewWorker !(ItemName, ThreadId)
-  | NewEnclosureSegments !(ItemName, Bool, PAEnclosure Double)
+  | NewEnclosureSegments !(ItemName, Bool, (Rational, Rational), PAEnclosure Double)
   -- | SetDrag Bool
   deriving (Show, Eq)
 
@@ -228,13 +235,13 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
           & state_item_encls . at name .~ Nothing
     (NewWorker (name, tid)) ->
       noEff $ s & state_item_workers . at name .~ Just tid
-    (NewEnclosureSegments (name, shouldAppend, encl)) ->
+    (NewEnclosureSegments (name, shouldAppend, scaling, encl)) ->
       noEff $
         s & state_item_encls . at name %~ addEncl
       where
-      addEncl (Just oldEncl)
-        | shouldAppend = Just $ oldEncl ++ encl
-      addEncl _ = Just encl
+      addEncl (Just (_, oldEncl))
+        | shouldAppend = Just $ (scaling, oldEncl ++ encl)
+      addEncl _ = Just (scaling, encl)
     -- SetDrag isDrag ->
     --   if isDrag 
     --     then noEff s'
@@ -331,9 +338,14 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
 
   sendNewEnclosureSegments isPanned plotArea plotAccuracy dom =
     writeChan actionChan
-      (NewEnclosureSegments (name, shouldAppend, qe2de enclosure))
+      (NewEnclosureSegments (name, shouldAppend, scaling, map (map scalePt) enclosure))
     where
     shouldAppend = isFunction && isPanned
+    scaling = (scalingX, scalingY)
+    scalePt (x,y) = (q2d $ scalingX * x, q2d $ scalingY * y)
+    scalingX = wQ/(xR-xL)
+    scalingY = hQ/(yR-yL)
+    Rectangle xL xR yL yR = plotArea
     enclosure =
       case plotItem of
         PlotItem_Fractal fr -> computeFractalEnclosure fr plotArea plotAccuracy
@@ -454,12 +466,6 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
   xPrec, yPrec :: CDAR.Precision
   xPrec = 10 + (round $ negate $ logBase 2 (minSegSize))
   yPrec = 10 + (round $ negate $ logBase 2 (yTolerance))
-
-qs2ds ::  [(Rational, Rational)] -> [(Double, Double)]
-qs2ds = map (\(x,y) -> (q2d x, q2d y))
-
-qe2de :: PAEnclosure Rational -> PAEnclosure Double
-qe2de = map qs2ds
 
 computeFractalEnclosure :: AffineFractal -> PlotArea -> PlotAccuracy -> (PAEnclosure Rational)
 computeFractalEnclosure fractal plotArea plotAccuracy =
@@ -862,7 +868,7 @@ viewPlot State {..} =
       gran = 10.0 ^^ (round $ logBase 10 (q2d $ (yR - yL)/10) :: Int)
       y1 = gran * (fromInteger $ ceiling (yL / gran)) :: Rational
 
-    renderEnclosure (itemName, enclosure) =
+    renderEnclosure (itemName, ((scalingX, scalingY), enclosure)) =
       map renderSegment enclosure
       where
       renderSegment pointsPre =
@@ -878,9 +884,19 @@ viewPlot State {..} =
         showPoint (x,y) = show x ++ "," ++ show y
         -- showR :: Rational -> String
         -- showR q = show $ (fromRational q :: Double)
-        transformPt (x,y) = (transformXD x, transformYD y)
-        transformXD x = (x-(q2d xL))*(q2d $ wQ/(xR-xL))
-        transformYD y = (q2d hQ)-(y-(q2d yL))*(q2d $ hQ/(yR-yL))
+        transformPt (x,y) = (trX x, trY y)
+        trX x
+          | sameScaleX = (x - shiftX)
+          | otherwise = (x - shiftX)*rescaleX
+        trY y
+          | sameScaleY = (q2d hQ) - (y - shiftY)
+          | otherwise = (q2d hQ) - (y - shiftY)*rescaleY
+        sameScaleX = (scalingX == wQ/(xR-xL))
+        sameScaleY = (scalingY == - hQ/(yR-yL))
+        shiftX = q2d $ xL * scalingX
+        shiftY = q2d $ yL * scalingY
+        rescaleX = q2d $ wQ/((xR-xL) *scalingX)
+        rescaleY = q2d $ hQ/((yR-yL) *scalingY)
         points = map transformPt pointsPre
 
 q2d :: Rational -> Double

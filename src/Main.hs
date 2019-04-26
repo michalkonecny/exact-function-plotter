@@ -283,6 +283,8 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
     do
     -- wait until there is a change in the plotArea, 
     -- then work out whether the change requires reset or append:
+    -- myId <- myThreadId
+    -- printf "enclWorker %s: waiting\n" (show myId)
     (plotArea, plotAccuracy, isPanned) <- atomically $ do
       pa <- readTVar plotAreaTV
       pac <- readTVar fnPlotAccuracyTV
@@ -292,6 +294,7 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
           if oldpa == pa && oldpac == pac then retry
           else
             pure (pa, pac, oldpac == pac && rect_isPanned oldpa pa)
+    -- printf "enclWorker %s: updating; isPanned = %s\n" (show myId) (show isPanned)
     -- if resetting, kill any potentially active threads:
     case isPanned of
       False -> mapM_ killThread threadIds
@@ -316,7 +319,7 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
           True -> waitForAreaAndAct (threadId : threadIds) (Just (dom, plotArea, plotAccuracy))
           _    -> waitForAreaAndAct [threadId] (Just (dom, plotArea, plotAccuracy))
       _ ->
-        waitForAreaAndAct threadIds maybePrevCompInfo -- ie do nothing this time
+        waitForAreaAndAct threadIds (Just (dom, plotArea, plotAccuracy)) -- ie do nothing this time
     where
     get_xC_x (oxCL, oxCR) pa
       | xL < oxCL && oxCL <= xR && xR <= oxCR = (Just (xL, oxCL), (xL, oxCR))

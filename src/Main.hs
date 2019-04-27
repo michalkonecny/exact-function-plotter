@@ -11,11 +11,11 @@ module Main where
 
 import Control.Concurrent
 import Control.Concurrent.STM (TVar, atomically, retry, readTVar, newTVar, writeTVar)
-import Control.Monad (void)
+import Control.Monad (void, foldM_)
 
 import Control.Monad.IO.Class (liftIO)
 
--- import Data.Time
+import Data.Time
 
 import Control.Lens as Lens hiding (view)
 
@@ -340,10 +340,31 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
       _ -> False
 
   sendNewEnclosureSegments isPanned plotArea plotAccuracy dom =
-    writeChan actionChan
-      (NewEnclosureSegments (name, shouldAppend, scaling, map (map scalePt) enclosure))
+    do
+    startTime <- getCurrentTime
+    foldM_ processSegment (True, startTime, []) (scaledEnclosure ++ [[]])
     where
-    shouldAppend = isFunction && isPanned
+    processSegment (isFirst, startTime, prevSegs) [] = 
+      do
+      writeChan actionChan
+        (NewEnclosureSegments (name, if isFirst then appending else True, scaling, prevSegs))
+      yield
+      pure (False, startTime, [])
+    processSegment (isFirst, startTime, prevSegs) seg = 
+      do
+      let s = sum $ map snd seg
+      segTime <- s `seq` getCurrentTime
+      if segTime `diffUTCTime` startTime > plotInterval
+        then do
+          writeChan actionChan
+            (NewEnclosureSegments (name, if isFirst then appending else True, scaling, seg : prevSegs))
+          yield
+          pure (False, segTime, [])
+        else do
+          pure (isFirst, startTime, seg : prevSegs)
+    plotInterval = fromRational 0.5 -- 0.5 seconds
+    scaledEnclosure = map (map scalePt) enclosure
+    appending = isFunction && isPanned
     scaling = (scalingX, scalingY)
     scalePt (x,y) = (q2d $ scalingX * x, q2d $ scalingY * y)
     scalingX = wQ/(xR-xL)

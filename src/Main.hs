@@ -155,8 +155,8 @@ main = do
   -- pure ()
   actionChan <- newChan
   plotAreaTV <- atomically $ newTVar initialPlotArea
-  plotAccuracyTV <- atomically $ newTVar Map.empty
-  continueWithVars actionChan plotAreaTV plotAccuracyTV
+  itemMapTV <- atomically $ newTVar Map.empty
+  continueWithVars actionChan plotAreaTV itemMapTV
   where
   initialPlotArea =
     Rectangle (-1) 1 (-1) 1
@@ -165,12 +165,12 @@ main = do
       -- initialMinXSegments
   -- initialPlotAreaMovement = 
   --   PlotAreaMovement False Nothing
-  continueWithVars actionChan plotAreaTV plotAccuracyTV =
+  continueWithVars actionChan plotAreaTV itemMapTV =
     runJSaddle undefined $ startApp App {..}
     where
     initialAction = NoOp
     model  = State Nothing initialPlotArea Map.empty Map.empty Map.empty Map.empty
-    update = flip $ updateState actionChan plotAreaTV plotAccuracyTV
+    update = flip $ updateState actionChan plotAreaTV itemMapTV
     view   = viewState
     events = defaultEvents
     subs   = [actionSub actionChan]
@@ -193,8 +193,12 @@ actionSub actionChan sink = void . liftIO . forkIO $ keepPassingActions
     keepPassingActions
 
 -- | Updates state, optionally introducing side effects
-updateState :: (Chan Action) -> (TVar PlotArea) -> (TVar (Map.Map ItemName (TVar PlotAccuracy))) -> State -> Action -> Effect Action State
-updateState actionChan plotAreaTV plotAccuracyTV s action =
+updateState :: 
+  (Chan Action) -> 
+  (TVar PlotArea) -> 
+  (TVar (Map.Map ItemName (TVar (PlotItem, PlotAccuracy)))) -> 
+  State -> Action -> Effect Action State
+updateState actionChan plotAreaTV itemMapTV s action =
   case action of
     (NewPlotArea pa) ->
       ((s & state_plotArea .~ pa) <#) $ liftIO $ do
@@ -203,25 +207,37 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
     (NewAccuracy (name, pac)) ->
       ((s & state_item_accuracies . at name .~ Just pac) <#) $ liftIO $ do
         atomically $ do
-          pacMap <- readTVar plotAccuracyTV
-          case pacMap ^. at name of
-            Just pacTV -> writeTVar pacTV pac
+          itemMap <- readTVar itemMapTV
+          case itemMap ^. at name of
+            Just fnTV -> 
+              do
+              (item, _pac) <- readTVar fnTV
+              writeTVar fnTV (item, pac)
             _ -> pure ()
         return NoOp
     (NewPlotItem (name, plotItem)) ->
       (s' <#) $ liftIO $ do
-        fnPlotAccuracyTV <- atomically $ do
-          fnPlotAccuracyTV <- newTVar plotAccuracy
-          paMap <- readTVar plotAccuracyTV
-          writeTVar plotAccuracyTV $ paMap & (at name) .~ Just fnPlotAccuracyTV
-          return fnPlotAccuracyTV
-        case s ^. state_item_workers . at name of
-          Just otid -> killThread otid -- stop previous worker thread
-          _ -> pure ()
-        -- start new worker thread:
-        threadId <- forkIO $ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem
-        -- register the worker thread:
-        pure $ NewWorker (name, threadId)
+        (itemTV, isNew) <- atomically $ do
+          itemMap <- readTVar itemMapTV
+          case itemMap ^. at name of
+            Just itemTV -> 
+              do
+              (_item, pac) <- readTVar itemTV
+              writeTVar itemTV (plotItem, pac)
+              pure (itemTV, False)
+            _ -> 
+              do
+              itemTV <- newTVar (plotItem, plotAccuracy)
+              writeTVar itemMapTV $ itemMap & (at name) .~ Just itemTV
+              pure (itemTV, True)
+        case isNew of
+          True -> do
+            -- start new worker thread:
+            threadId <- forkIO $ enclWorker actionChan plotAreaTV itemTV name
+            -- register the worker thread:
+            pure $ NewWorker (name, threadId)
+          False -> do
+            pure NoOp
       where
       plotAccuracy =
         case s ^. state_item_accuracies . at name of
@@ -275,8 +291,8 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
     NoOp -> noEff s
 
 
-enclWorker :: Chan Action -> TVar PlotArea -> TVar PlotAccuracy -> String -> PlotItem -> IO ()
-enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
+enclWorker :: Chan Action -> TVar PlotArea -> TVar (PlotItem, PlotAccuracy) -> String -> IO ()
+enclWorker actionChan plotAreaTV itemTV name =
   waitForAreaAndAct [] Nothing
   where
   waitForAreaAndAct threadIds maybePrevCompInfo =
@@ -285,15 +301,15 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
     -- then work out whether the change requires reset or append:
     -- myId <- myThreadId
     -- printf "enclWorker %s: waiting\n" (show myId)
-    (plotArea, plotAccuracy, isPanned) <- atomically $ do
+    (plotArea, plotItem, plotAccuracy, isPanned) <- atomically $ do
       pa <- readTVar plotAreaTV
-      pac <- readTVar fnPlotAccuracyTV
+      (item, pac) <- readTVar itemTV
       case maybePrevCompInfo of
-        Nothing -> pure (pa, pac, False)
-        Just (_, oldpa, oldpac) ->
-          if oldpa == pa && oldpac == pac then retry
+        Nothing -> pure (pa, item, pac, False)
+        Just (_, oldItem, oldpa, oldpac) ->
+          if oldItem == item && oldpa == pa && oldpac == pac then retry
           else
-            pure (pa, pac, oldpac == pac && rect_isPanned oldpa pa)
+            pure (pa, item, pac, oldItem == item && oldpac == pac && rect_isPanned oldpa pa)
     -- printf "enclWorker %s: updating; isPanned = %s\n" (show myId) (show isPanned)
     -- if resetting, kill any potentially active threads:
     case isPanned of
@@ -304,7 +320,7 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
       case (plotItem, maybePrevCompInfo) of
         (PlotItem_Curve (Curve2D dom _ _), _) ->
           pure $ if isPanned then (Nothing, dom) else (Just dom, dom)
-        (PlotItem_Function _, Just (odomC, _, _)) | isPanned ->
+        (PlotItem_Function _, Just (odomC, _, _, _)) | isPanned ->
           pure (get_xC_x odomC plotArea)
         _ ->
           pure (Just xP, xP)
@@ -314,12 +330,12 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
     case mdomC of
       Just domC ->
         do
-        threadId <- forkIO $ sendNewEnclosureSegments isPanned plotArea plotAccuracy domC
+        threadId <- forkIO $ sendNewEnclosureSegments plotItem isPanned plotArea plotAccuracy domC
         case isPanned of
-          True -> waitForAreaAndAct (threadId : threadIds) (Just (dom, plotArea, plotAccuracy))
-          _    -> waitForAreaAndAct [threadId] (Just (dom, plotArea, plotAccuracy))
+          True -> waitForAreaAndAct (threadId : threadIds) (Just (dom, plotItem, plotArea, plotAccuracy))
+          _    -> waitForAreaAndAct [threadId] (Just (dom, plotItem, plotArea, plotAccuracy))
       _ ->
-        waitForAreaAndAct threadIds (Just (dom, plotArea, plotAccuracy)) -- ie do nothing this time
+        waitForAreaAndAct threadIds (Just (dom, plotItem, plotArea, plotAccuracy)) -- ie do nothing this time
     where
     get_xC_x (oxCL, oxCR) pa
       | xL < oxCL && oxCL <= xR && xR <= oxCR = (Just (xL, oxCL), (xL, oxCR))
@@ -334,16 +350,15 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
       where
       (Rectangle xL xR _ _) = pa
   
-  isFunction =
-    case plotItem of
-      PlotItem_Function _ -> True
-      _ -> False
-
-  sendNewEnclosureSegments isPanned plotArea plotAccuracy dom =
+  sendNewEnclosureSegments plotItem isPanned plotArea plotAccuracy dom =
     do
     startTime <- getCurrentTime
     foldM_ processSegment (True, startTime, []) (scaledEnclosure ++ [[]])
     where
+    isFunction =
+      case plotItem of
+        PlotItem_Function _ -> True
+        _ -> False
     processSegment (isFirst, startTime, prevSegs) [] = 
       do
       writeChan actionChan

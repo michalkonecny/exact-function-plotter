@@ -136,7 +136,7 @@ type PlotArea = Rectangle Rational
 
 type PAEnclosure t = [PASegment t]
 
-type PASegment t = [(t, t)] -- closed polyline
+type PASegment t = ([(t, t)], Maybe Double) -- closed polyline
 
 data Action
   = NoOp
@@ -353,13 +353,13 @@ enclWorker actionChan plotAreaTV itemTV name =
   sendNewEnclosureSegments plotItem isPanned plotArea plotAccuracy dom =
     do
     startTime <- getCurrentTime
-    foldM_ processSegment (True, startTime, []) (scaledEnclosure ++ [[]])
+    foldM_ processSegment (True, startTime, []) (scaledEnclosure ++ [([], Nothing)])
     where
     isFunction =
       case plotItem of
         PlotItem_Function _ -> True
         _ -> False
-    processSegment (isFirst, startTime, prevSegs) [] =
+    processSegment (isFirst, startTime, prevSegs) ([], _) =
       do
       writeChan actionChan
         (NewEnclosureSegments (name, if isFirst then appending else True, scaling, prevSegs))
@@ -367,7 +367,7 @@ enclWorker actionChan plotAreaTV itemTV name =
       pure (False, startTime, [])
     processSegment (isFirst, startTime, prevSegs) seg =
       do
-      let s = sum $ map snd seg
+      let s = sum $ map snd $ fst seg
       segTime <- s `seq` getCurrentTime
       if segTime `diffUTCTime` startTime > plotInterval
         then do
@@ -378,9 +378,10 @@ enclWorker actionChan plotAreaTV itemTV name =
         else do
           pure (isFirst, startTime, seg : prevSegs)
     plotInterval = fromRational 0.5 -- 0.5 seconds
-    scaledEnclosure = map (map scalePt) enclosure
+    scaledEnclosure = map scaleSeg enclosure
     appending = isFunction && isPanned
     scaling = (scalingX, scalingY)
+    scaleSeg (pts, mwidth) = (map scalePt pts, mwidth)
     scalePt (x,y) = (q2d $ scalingX * x, q2d $ scalingY * y)
     scalingX = wQ/(xR-xL)
     scalingY = hQ/(yR-yL)
@@ -454,10 +455,10 @@ encloseSegmentItem ::
 encloseSegmentItem p (xTolerance, yTolerance) yWd plotItem (l,r) =
   case plotItem of
     (PlotItem_Function rx) ->
-      (hull0 e0
+      (hull0 e0 w0
       , w0
       , w0 <= yTolerance
-      , fmap (uncurry hullTwoRects) e1
+      , fmap (\(r1,r2) -> (hullTwoRects r1 r2, Just w1)) e1
       , w1
       , w1 <= yTolerance)
       where
@@ -466,11 +467,11 @@ encloseSegmentItem p (xTolerance, yTolerance) yWd plotItem (l,r) =
       w1 = enclosure1Width rx e1
 
     (PlotItem_Curve (Curve2D _dom rx_x rx_y)) ->
-      (hull0 e0
-      , max w0x w0y
+      (hull0 e0 w0
+      , w0
       , w0x <= xTolerance && w0y <= yTolerance
-      , fmap (uncurry hullTwoRects) e1
-      , max w1x w1y
+      , fmap (\(r1,r2) -> (hullTwoRects r1 r2, Just w1)) e1
+      , w1
       , w1x <= xTolerance && w1y <= yTolerance)
       where
       e0 = combine_exy e0x e0y
@@ -479,8 +480,10 @@ encloseSegmentItem p (xTolerance, yTolerance) yWd plotItem (l,r) =
       (e0y, e1y) = encloseSegmentRX p rx_y (l,r)
       w0x = enclosure0Width e0x
       w0y = enclosure0Width e0y
+      w0 = max w0x w0y
       w1x = enclosure1Width rx_x e1x
       w1y = enclosure1Width rx_y e1y
+      w1 = max w1x w1y
       combine_exy
         (Just (Rectangle _ _ xiLL xiLR, Rectangle _ _ xiRL xiRR))
         (Just (Rectangle _ _ yiLL yiLR, Rectangle _ _ yiRL yiRR)) =
@@ -489,9 +492,9 @@ encloseSegmentItem p (xTolerance, yTolerance) yWd plotItem (l,r) =
 
     (PlotItem_Fractal _) -> error "encloseSegmentItem called for a fractal"
   where
-  hull0 (Just (Rectangle xiL _ _ _, Rectangle _ xiR yiL yiR)) =
-    Just [(xiL, yiL), (xiR, yiL), (xiR, yiR), (xiL, yiR)]
-  hull0 _ = Nothing
+  hull0 (Just (Rectangle xiL _ _ _, Rectangle _ xiR yiL yiR)) w0 =
+    Just ([(xiL, yiL), (xiR, yiL), (xiR, yiR), (xiL, yiR)], Just w0)
+  hull0 _ _ = Nothing
   enclosure0Width (Just (_, Rectangle _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
   enclosure0Width _ = yWd
   -- tol1Vert = enclosure1VertTolerance lrEnclosure1
@@ -555,7 +558,7 @@ computeFractalEnclosure fractal plotArea plotAccuracy =
   ++ (concat $ map (applyTransform [boundsEncl]) lastLayerTransfroms)
   where
   AffineFractal curves transformations depth (Rectangle l r d u) = fractal
-  boundsEncl = [(l,d), (r,d), (r,u), (l,u)]
+  boundsEncl = ([(l,d), (r,d), (r,u), (l,u)], Nothing)
   enclosure0 =
     concat $ map encloseCurve curves
   encloseCurve curve =
@@ -568,8 +571,10 @@ computeFractalEnclosure fractal plotArea plotAccuracy =
     prevTransformations@(prevLayer :_) = transformationsToDepth (n-1)
   (lastLayerTransfroms : transforms) = transformationsToDepth depth
   applyTransform encl (vx,vy,_) =
-    map (map applyOnPt) encl
+    map applyOnSeg encl
     where
+    applyOnSeg (seg, _mwidth) =
+      (map applyOnPt seg, Nothing)
     applyOnPt (x,y) =
       (vx `v3prod` (x,y,1)
       ,vy `v3prod` (x,y,1))
@@ -594,6 +599,7 @@ viewState s@State{..} =
     ++ viewAddItem s
     ++ viewItemList s
     ++ viewSelectedItemControls s
+    -- ++ [br_ [], text (ms $ show $ _state_item_encls), br_ []]
     -- ++ [br_ [], text (ms $ show $ _state_plotArea), br_ []]
     -- ++ [br_ [], text (ms $ show $ _state_item_accuracies), br_ []]
 
@@ -987,7 +993,7 @@ viewPlot State {..} =
     renderEnclosure (itemName, ((scalingX, scalingY), enclosure)) =
       map renderSegment enclosure
       where
-      renderSegment pointsPre =
+      renderSegment (pointsPre, _) =
         polygon_  (points_ pointsMS : style) []
         where
         style =

@@ -633,17 +633,18 @@ viewAddItem _s@State{..} =
   [
     text "Add: "
   , flip button_ [text "function"] [ onClick (NewPlotItem (freshName "f", (PlotItem_Function RXVarX)))]
-  , flip button_ [text "sin(10x^2)"] [ onClick (NewPlotItem (freshName "sin(10x^2)", (PlotItem_Function (s2rx "sin(10*x^2)"))))]
-  , flip button_ [text "x*sin(10/x)"] [ onClick (NewPlotItem (freshName "x*sin(10/x)", (PlotItem_Function (s2rx "x*sin(10/x)"))))]
+  , flip button_ [text "sin(10x^2)"] [ onClick (NewPlotItem (freshName "sin(10x^2)", (PlotItem_Function fn_sineM)))]
+  , flip button_ [text "x*sin(10/x)"] [ onClick (NewPlotItem (freshName "x*sin(10/x)", (PlotItem_Function fn_sineInfty)))]
   , text "; "
   , flip button_ [text "curve"] [ onClick (NewPlotItem (freshName "c", (PlotItem_Curve defaultCurve2D)))]
-  , flip button_ [text "spiral"] [ onClick (NewPlotItem (freshName "spiral", (PlotItem_Curve spiral)))]
-  , flip button_ [text "infty"] [ onClick (NewPlotItem (freshName "infty", (PlotItem_Curve infty)))]
-  , flip button_ [text "mesh"] [ onClick (NewPlotItem (freshName "mesh", (PlotItem_Curve mesh)))]
+  , flip button_ [text "infty"] [ onClick (NewPlotItem (freshName "infty", (PlotItem_Curve curve_infty)))]
+  , flip button_ [text "mesh"] [ onClick (NewPlotItem (freshName "mesh", (PlotItem_Curve curve_mesh)))]
+  , flip button_ [text "spiral"] [ onClick (NewPlotItem (freshName "spiral", (PlotItem_Curve curve_spiral)))]
+  , flip button_ [text "spiralInfty"] [ onClick (NewPlotItem (freshName "spiral", (PlotItem_Curve curve_infspiral)))]
   , text "; "
   , flip button_ [text "fractal"] [ onClick (NewPlotItem (freshName "fr", (PlotItem_Fractal defaultFractal)))]
-  , flip button_ [text "tree"] [ onClick (NewPlotItem (freshName "tree", (PlotItem_Fractal treeFractal)))]
-  , flip button_ [text "umbr"] [ onClick (NewPlotItem (freshName "umbr", (PlotItem_Fractal umbrellaFractal)))]
+  , flip button_ [text "tree"] [ onClick (NewPlotItem (freshName "tree", (PlotItem_Fractal fractal_tree)))]
+  , flip button_ [text "umbrella"] [ onClick (NewPlotItem (freshName "umbr", (PlotItem_Fractal fractal_umbrella)))]
   , br_ []
   ]
   where
@@ -652,10 +653,44 @@ viewAddItem _s@State{..} =
     case find (not . flip elem itemNames) $ prefix : [ prefix ++ show (i :: Int) | i <- [2..] ] of
       Just nm -> nm
       _ -> error "failed to find a default function name"
-  spiral = Curve2D (0, 50) (s2rx "0.02*x*sin(x)") (s2rx "0.02*x*cos(x)")
-  infty = Curve2D (0, 6.29) (s2rx "0.8*sin(x)") (s2rx "0.5*sin(2*x)")
-  mesh = Curve2D (0, 6.29) (s2rx "0.8*sin(5*x)") (s2rx "0.5*sin(12*x)")
-  
+
+fn_sineM :: RX 
+fn_sineM = s2rx "sin(10*x^2)"
+
+fn_sineInfty :: RX
+fn_sineInfty = s2rx "x*sin(10/x)"
+
+curve_spiral :: Curve2D
+curve_spiral = Curve2D (0, 50) (s2rx "0.02*x*sin(x)") (s2rx "0.02*x*cos(x)")
+curve_infspiral :: Curve2D
+curve_infspiral = Curve2D (0, 1) (s2rx "x*sin(1/x)") (s2rx "x*cos(1/x)")
+curve_infty :: Curve2D
+curve_infty = Curve2D (0, 6.29) (s2rx "0.8*sin(x)") (s2rx "0.5*sin(2*x)")
+curve_mesh :: Curve2D
+curve_mesh = Curve2D (0, 6.29) (s2rx "0.8*sin(5*x)") (s2rx "0.5*sin(12*x)")
+
+fractal_tree :: AffineFractal
+fractal_tree =
+  AffineFractal 
+    [Curve2D (0,0.5) (s2rx "0") (s2rx "x-0.5")] 
+    [
+      ((0.5,-0.5,-0.25),(0.5,0.5,0.25),(0,0,1))
+    , ((0.5,0.5,0.25),(-0.5,0.5,0.25),(0,0,1))
+    ] 
+    5
+    (Rectangle (-1) 1 (-0.5) 1)
+
+fractal_umbrella :: AffineFractal
+fractal_umbrella =
+  AffineFractal 
+    [Curve2D (0,1) (s2rx "0") (s2rx "x-1")] 
+    [
+      ((0.5,-0.25,-0.25),(0.5,0.25,0.25),(0,0,1))
+    , ((0.5,0.25,0.25),(-0.5,0.25,0.25),(0,0,1))
+    ] 
+    5
+    (Rectangle (-0.6) 0.6 (-1) 0.6)
+
 
 viewItemList :: State -> [View Action]
 viewItemList _s@State{..} =

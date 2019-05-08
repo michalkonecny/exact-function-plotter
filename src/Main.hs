@@ -377,7 +377,7 @@ enclWorker actionChan plotAreaTV itemTV name =
           pure (False, segTime, [])
         else do
           pure (isFirst, startTime, seg : prevSegs)
-    plotInterval = fromRational 0.5 -- 0.5 seconds
+    plotInterval = fromRational 1.0 -- 1.0 seconds
     scaledEnclosure = map scaleSeg enclosure
     appending = isFunction && isPanned
     scaling = (scalingX, scalingY)
@@ -554,8 +554,8 @@ encloseSegmentRX p rx (xiL, xiR) =
 computeFractalEnclosure :: AffineFractal -> PlotArea -> PlotAccuracy -> (PAEnclosure Rational)
 computeFractalEnclosure fractal plotArea plotAccuracy =
   enclosure0
-  ++ (concat $ map (applyTransform enclosure0) $ concat transforms)
-  ++ (concat $ map (applyTransform [boundsEncl]) lastLayerTransfroms)
+  ++ (concat $ map (applyTransform enclosure0) $ concat $ reverse transforms)
+  ++ (concat $ map (applyTransform [boundsEncl]) lastLayerTransforms)
   where
   AffineFractal curves transformations depth (Rectangle l r d u) = fractal
   boundsEncl = ([(l,d), (r,d), (r,u), (l,u)], Nothing)
@@ -569,7 +569,7 @@ computeFractalEnclosure fractal plotArea plotAccuracy =
       [ t `aftCompose` tPrev | t <- transformations, tPrev <- prevLayer] : prevTransformations
     where
     prevTransformations@(prevLayer :_) = transformationsToDepth (n-1)
-  (lastLayerTransfroms : transforms) = transformationsToDepth depth
+  (lastLayerTransforms : transforms) = transformationsToDepth depth
   applyTransform encl (vx,vy,_) =
     map applyOnSeg encl
     where

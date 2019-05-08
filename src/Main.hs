@@ -11,11 +11,9 @@ module Main where
 
 import Control.Concurrent
 import Control.Concurrent.STM (TVar, atomically, retry, readTVar, newTVar, writeTVar)
-import Control.Monad (void, foldM_)
+import Control.Monad (void)
 
 import Control.Monad.IO.Class (liftIO)
-
-import Data.Time
 
 import Control.Lens as Lens hiding (view)
 
@@ -352,28 +350,15 @@ enclWorker actionChan plotAreaTV itemTV name =
 
   sendNewEnclosureSegments plotItem isPanned plotArea plotAccuracy dom =
     do
-    startTime <- getCurrentTime
-    foldM_ processSegment (True, startTime, []) (scaledEnclosure ++ [([], Nothing)])
+    processBatch True batch1
+    mapM_ (processBatch False) batches
     where
-    processSegment (isFirst, startTime, prevSegs) ([], _) =
+    batch1 : batches = splitIntoBatches 100 scaledEnclosure
+    processBatch isFirst batch = 
       do
       writeChan actionChan
-        (NewEnclosureSegments (name, if isFirst then appending else True, scaling, prevSegs))
+        (NewEnclosureSegments (name, (not isFirst) || appending, scaling, batch))
       yield
-      pure (False, startTime, [])
-    processSegment (isFirst, startTime, prevSegs) seg =
-      do
-      let s = sum $ map snd $ fst seg
-      segTime <- s `seq` getCurrentTime
-      if segTime `diffUTCTime` startTime > plotInterval
-        then do
-          writeChan actionChan
-            (NewEnclosureSegments (name, if isFirst then appending else True, scaling, seg : prevSegs))
-          yield
-          pure (False, segTime, [])
-        else do
-          pure (isFirst, startTime, seg : prevSegs)
-    plotInterval = fromRational 1.0 -- 1.0 seconds
     scaledEnclosure = map scaleSeg enclosure
     appending = isFunction && isPanned
     isFunction =
@@ -599,7 +584,7 @@ viewState s@State{..} =
     ++ viewAddItem s
     ++ viewItemList s
     ++ viewSelectedItemControls s
-    ++ [br_ [], text (ms $ show $ _state_item_encls), br_ []]
+    -- ++ [br_ [], text (ms $ show $ _state_item_encls), br_ []]
     -- ++ [br_ [], text (ms $ show $ _state_plotArea), br_ []]
     -- ++ [br_ [], text (ms $ show $ _state_item_accuracies), br_ []]
 
@@ -1029,3 +1014,11 @@ d2q = toRational
 
 s2ms :: String -> MisoString
 s2ms = ms
+
+splitIntoBatches :: Int -> [a] -> [[a]]
+splitIntoBatches n list =
+  case rest of
+    [] -> [batch]
+    _ -> batch : splitIntoBatches n rest
+  where
+  (batch, rest) = splitAt n list

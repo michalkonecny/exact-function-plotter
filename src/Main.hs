@@ -193,10 +193,10 @@ actionSub actionChan sink = void . liftIO . forkIO $ keepPassingActions
     keepPassingActions
 
 -- | Updates state, optionally introducing side effects
-updateState :: 
-  (Chan Action) -> 
-  (TVar PlotArea) -> 
-  (TVar (Map.Map ItemName (TVar (PlotItem, PlotAccuracy)))) -> 
+updateState ::
+  (Chan Action) ->
+  (TVar PlotArea) ->
+  (TVar (Map.Map ItemName (TVar (PlotItem, PlotAccuracy)))) ->
   State -> Action -> Effect Action State
 updateState actionChan plotAreaTV itemMapTV s action =
   case action of
@@ -209,7 +209,7 @@ updateState actionChan plotAreaTV itemMapTV s action =
         atomically $ do
           itemMap <- readTVar itemMapTV
           case itemMap ^. at name of
-            Just fnTV -> 
+            Just fnTV ->
               do
               (item, _pac) <- readTVar fnTV
               writeTVar fnTV (item, pac)
@@ -220,12 +220,12 @@ updateState actionChan plotAreaTV itemMapTV s action =
         (itemTV, isNew) <- atomically $ do
           itemMap <- readTVar itemMapTV
           case itemMap ^. at name of
-            Just itemTV -> 
+            Just itemTV ->
               do
               (_item, pac) <- readTVar itemTV
               writeTVar itemTV (plotItem, pac)
               pure (itemTV, False)
-            _ -> 
+            _ ->
               do
               itemTV <- newTVar (plotItem, plotAccuracy)
               writeTVar itemMapTV $ itemMap & (at name) .~ Just itemTV
@@ -349,7 +349,7 @@ enclWorker actionChan plotAreaTV itemTV name =
     plotArea_x pa = (xL, xR)
       where
       (Rectangle xL xR _ _) = pa
-  
+
   sendNewEnclosureSegments plotItem isPanned plotArea plotAccuracy dom =
     do
     startTime <- getCurrentTime
@@ -359,13 +359,13 @@ enclWorker actionChan plotAreaTV itemTV name =
       case plotItem of
         PlotItem_Function _ -> True
         _ -> False
-    processSegment (isFirst, startTime, prevSegs) [] = 
+    processSegment (isFirst, startTime, prevSegs) [] =
       do
       writeChan actionChan
         (NewEnclosureSegments (name, if isFirst then appending else True, scaling, prevSegs))
       yield
       pure (False, startTime, [])
-    processSegment (isFirst, startTime, prevSegs) seg = 
+    processSegment (isFirst, startTime, prevSegs) seg =
       do
       let s = sum $ map snd seg
       segTime <- s `seq` getCurrentTime
@@ -409,9 +409,12 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
   minSegSize = xWd/xMaxNd
   yTolerance = yWd/yNd
   xTolerance = xWd/yNd
-  enclosure = aseg tL tR
-  aseg l r
-    | rd - ld > maxSegSize = asegDivision
+  tolerance = yTolerance `max` xTolerance
+  initPrec :: CDAR.Precision
+  initPrec = 10 + (round $ negate $ logBase 2 (min xTolerance yTolerance))
+  enclosure = aseg initPrec tL tR
+  aseg prec l r
+    | rd - ld > maxSegSize = asegDivision prec
     | rd - ld < 2 * minSegSize =
         catMaybes [lrEnclosure0]
         -- catMaybes [lrEnclosureBest]
@@ -419,92 +422,131 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
         catMaybes [lrEnclosure0]
     | good1 =
         catMaybes [lrEnclosure1]
-    | otherwise = asegDivision
+    | otherwise = asegDivision precNext
     where
     ld = q2d l
     rd = q2d r
-    asegDivision = aseg l m ++ aseg m r
+    asegDivision p = aseg p l m ++ aseg p m r
       where m = (l+r)/2
-    (lrEnclosure0, good0, lrEnclosure1, good1) =
-      case plotItem of
-        (PlotItem_Function rx) ->
-          (hull0 e0, w0 <= yTolerance, fmap (uncurry hullTwoRects) e1, w1 <= yTolerance)
-          where
-          (e1, e0) = encloseSegment rx (l,r)
-          w0 = enclosure0Width e0
-          w1 = enclosure1Width rx e1
-        (PlotItem_Curve (Curve2D _dom rx_x rx_y)) ->
-          (hull0 e0, g0, fmap (uncurry hullTwoRects) e1, g1)
-          where
-          e0 = combine_exy e0x e0y
-          e1 = combine_exy e1x e1y
-          g0 = w0x <= xTolerance && w0y <= yTolerance
-          g1 = w1x <= xTolerance && w1y <= yTolerance
-          (e1x, e0x) = encloseSegment rx_x (l,r)
-          (e1y, e0y) = encloseSegment rx_y (l,r)
-          w0x = enclosure0Width e0x
-          w0y = enclosure0Width e0y
-          w1x = enclosure1Width rx_x e1x
-          w1y = enclosure1Width rx_y e1y
-          combine_exy
-            (Just (Rectangle _ _ xiLL xiLR, Rectangle _ _ xiRL xiRR))
-            (Just (Rectangle _ _ yiLL yiLR, Rectangle _ _ yiRL yiRR)) =
-            Just (Rectangle xiLL xiLR yiLL yiLR, Rectangle xiRL xiRR yiRL yiRR)
-          combine_exy _ _ = Nothing
-        (PlotItem_Fractal _) -> error "computeEnclosure called for a fractal"
-    hull0 (Just (Rectangle xiL _ _ _, Rectangle _ xiR yiL yiR)) = Just [(xiL, yiL), (xiR, yiL), (xiR, yiR), (xiL, yiR)]
-    hull0 _ = Nothing
-    enclosure0Width (Just (_, Rectangle _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
-    enclosure0Width _ = yWd
-    -- tol1Vert = enclosure1VertTolerance lrEnclosure1
-    enclosure1Width rx (Just (Rectangle xiL _ yiLL _yiLR, Rectangle xiR _ yiRL yiRR)) =
-      xiW * yiW / (sqrt $ xiW^(2::Int) + yiD2^(2::Int))
+    enclosuresPrecs@(enclosuresPrec : _) = 
+      map withPrec precs
       where
-      yiW = (q2d yiRR) - (q2d yiRL)
-      xiW = (q2d xiR) - (q2d xiL)
-      yiD2 = yiD/2
-      yiD
-        | yiDavg >= 0 = yiDavg `min` (((max 0 yiLDd) `min` (max 0 yiRDd)) * xiW)
-        | otherwise = (-yiDavg) `min` (((max 0 (-yiLDd)) `min` (max 0 (-yiRDd))) * xiW)
-      yiDavg = (q2d yiRL) - (q2d yiLL)
-      D (_ : yiLDd : _) = evalRX () rx (xD () ld)
-      D (_ : yiRDd : _) = evalRX () rx (xD () rd)
-    enclosure1Width _ _ = yWd
-  encloseSegment rx (xiL, xiR) =
-    (enclosure1, enclosure0)
+      withPrec p = encloseSegmentItem p (xTolerance, yTolerance) yWd plotItem (l,r)
+    precs = iterate (\p -> (3*p `div` 2) + 10) prec
+    (lrEnclosure0, width0, good0, lrEnclosure1, width1, good1) = enclosuresPrec
+    precNext = 
+      pickPrecStopImproving width0 width1 $ zip precs enclosuresPrecs
+      where
+      pickPrecStopImproving prevW0 prevW1 ((p,(_,w0,_,_,w1,_)) : rest)
+        | w0 <= prevW0 - tolerance/10 = pickPrecStopImproving w0 w1 rest
+        | w1 <= prevW1 - tolerance/10 = pickPrecStopImproving w0 w1 rest
+        | otherwise = p
+      pickPrecStopImproving _ _ _ = error "pickPrecStopImproving: infinite list ended"
+
+encloseSegmentItem :: 
+  CDAR.Precision
+  -> (Double, Double)
+  -> Double
+  -> PlotItem
+  -> (Rational, Rational)
+  -> (Maybe (PASegment Rational), Double, Bool
+    , Maybe (PASegment Rational), Double, Bool)
+encloseSegmentItem p (xTolerance, yTolerance) yWd plotItem (l,r) =
+  case plotItem of
+    (PlotItem_Function rx) ->
+      (hull0 e0
+      , w0
+      , w0 <= yTolerance
+      , fmap (uncurry hullTwoRects) e1
+      , w1
+      , w1 <= yTolerance)
+      where
+      (e0, e1) = encloseSegmentRX p rx (l,r)
+      w0 = enclosure0Width e0
+      w1 = enclosure1Width rx e1
+
+    (PlotItem_Curve (Curve2D _dom rx_x rx_y)) ->
+      (hull0 e0
+      , max w0x w0y
+      , w0x <= xTolerance && w0y <= yTolerance
+      , fmap (uncurry hullTwoRects) e1
+      , max w1x w1y
+      , w1x <= xTolerance && w1y <= yTolerance)
+      where
+      e0 = combine_exy e0x e0y
+      e1 = combine_exy e1x e1y
+      (e0x, e1x) = encloseSegmentRX p rx_x (l,r)
+      (e0y, e1y) = encloseSegmentRX p rx_y (l,r)
+      w0x = enclosure0Width e0x
+      w0y = enclosure0Width e0y
+      w1x = enclosure1Width rx_x e1x
+      w1y = enclosure1Width rx_y e1y
+      combine_exy
+        (Just (Rectangle _ _ xiLL xiLR, Rectangle _ _ xiRL xiRR))
+        (Just (Rectangle _ _ yiLL yiLR, Rectangle _ _ yiRL yiRR)) =
+        Just (Rectangle xiLL xiLR yiLL yiLR, Rectangle xiRL xiRR yiRL yiRR)
+      combine_exy _ _ = Nothing
+
+    (PlotItem_Fractal _) -> error "encloseSegmentItem called for a fractal"
+  where
+  hull0 (Just (Rectangle xiL _ _ _, Rectangle _ xiR yiL yiR)) =
+    Just [(xiL, yiL), (xiR, yiL), (xiR, yiR), (xiL, yiR)]
+  hull0 _ = Nothing
+  enclosure0Width (Just (_, Rectangle _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
+  enclosure0Width _ = yWd
+  -- tol1Vert = enclosure1VertTolerance lrEnclosure1
+  enclosure1Width rx (Just (Rectangle xiL _ yiLL _yiLR, Rectangle xiR _ yiRL yiRR)) =
+    xiW * yiW / (sqrt $ xiW^(2::Int) + yiD2^(2::Int))
     where
-    xiM = (xiL + xiR)/2
-    yiM_A = evalRX (yPrec) rx (CDAR.toApprox (xPrec) xiM)
-    xi_A = (CDAR.toApprox (xPrec) xiL) `CDAR.unionA` (CDAR.toApprox xPrec xiR)
-    (D (yi_A : yid_A : _)) = evalRX (yPrec) rx (xD xPrec xi_A)
-    enclosure1 =
-      case (CDAR.lowerBound yiM_A, CDAR.upperBound yiM_A, CDAR.lowerBound yid_A, CDAR.upperBound yid_A) of
-        (CDAR.Finite yiML_D, CDAR.Finite  yiMR_D, CDAR.Finite  yidL_D, CDAR.Finite  yidR_D) ->
-          let
-            yiML = toRational yiML_D
-            yiMR = toRational yiMR_D
-            yidL = toRational yidL_D
-            yidR = toRational yidR_D
-            rad = (xiR - xiL)/2
-            yiLL = yiML - rad*yidR
-            yiLR = yiMR - rad*yidL
-            yiRL = yiML + rad*yidL
-            yiRR = yiMR + rad*yidR
-          in
-          Just (Rectangle xiL xiL yiLL yiLR, Rectangle xiR xiR yiRL yiRR)
-        _ -> Nothing
-    enclosure0 =
-      case (CDAR.lowerBound yi_A, CDAR.upperBound yi_A) of
-        (CDAR.Finite yiL_D, CDAR.Finite yiR_D) ->
-          let
-            yiL = toRational yiL_D
-            yiR = toRational yiR_D
-          in
-          Just (Rectangle xiL xiL yiL yiR, Rectangle xiR xiR yiL yiR)
-        _ -> Nothing
-  xPrec, yPrec :: CDAR.Precision
-  xPrec = 10 + (round $ negate $ logBase 2 (minSegSize))
-  yPrec = 10 + (round $ negate $ logBase 2 (yTolerance))
+    yiW = (q2d yiRR) - (q2d yiRL)
+    xiW = (q2d xiR) - (q2d xiL)
+    yiD2 = yiD/2
+    yiD
+      | yiDavg >= 0 = yiDavg `min` (((max 0 yiLDd) `min` (max 0 yiRDd)) * xiW)
+      | otherwise = (-yiDavg) `min` (((max 0 (-yiLDd)) `min` (max 0 (-yiRDd))) * xiW)
+    yiDavg = (q2d yiRL) - (q2d yiLL)
+    D (_ : yiLDd : _) = evalRX () rx (xD () (q2d l))
+    D (_ : yiRDd : _) = evalRX () rx (xD () (q2d r))
+  enclosure1Width _ _ = yWd
+
+encloseSegmentRX ::
+  CDAR.Precision ->
+  RX {-^ expression defining function @f@ -} ->
+  (Rational, Rational) {-^ interval over which to evaluate @f@ -} ->
+  (Maybe (Rectangle Rational, Rectangle Rational),
+   Maybe (Rectangle Rational, Rectangle Rational))
+encloseSegmentRX p rx (xiL, xiR) =
+  (enclosure0, enclosure1)
+  where
+  xiM = (xiL + xiR)/2
+  yiM_A = evalRX p rx (CDAR.toApprox p xiM)
+  xi_A = (CDAR.toApprox p xiL) `CDAR.unionA` (CDAR.toApprox p xiR)
+  (D (yi_A : yid_A : _)) = evalRX p rx (xD p xi_A)
+  enclosure1 =
+    case (CDAR.lowerBound yiM_A, CDAR.upperBound yiM_A, CDAR.lowerBound yid_A, CDAR.upperBound yid_A) of
+      (CDAR.Finite yiML_D, CDAR.Finite  yiMR_D, CDAR.Finite  yidL_D, CDAR.Finite  yidR_D) ->
+        let
+          yiML = toRational yiML_D
+          yiMR = toRational yiMR_D
+          yidL = toRational yidL_D
+          yidR = toRational yidR_D
+          rad = (xiR - xiL)/2
+          yiLL = yiML - rad*yidR
+          yiLR = yiMR - rad*yidL
+          yiRL = yiML + rad*yidL
+          yiRR = yiMR + rad*yidR
+        in
+        Just (Rectangle xiL xiL yiLL yiLR, Rectangle xiR xiR yiRL yiRR)
+      _ -> Nothing
+  enclosure0 =
+    case (CDAR.lowerBound yi_A, CDAR.upperBound yi_A) of
+      (CDAR.Finite yiL_D, CDAR.Finite yiR_D) ->
+        let
+          yiL = toRational yiL_D
+          yiR = toRational yiR_D
+        in
+        Just (Rectangle xiL xiL yiL yiR, Rectangle xiR xiR yiL yiR)
+      _ -> Nothing
 
 computeFractalEnclosure :: AffineFractal -> PlotArea -> PlotAccuracy -> (PAEnclosure Rational)
 computeFractalEnclosure fractal plotArea plotAccuracy =
@@ -514,7 +556,7 @@ computeFractalEnclosure fractal plotArea plotAccuracy =
   where
   AffineFractal curves transformations depth (Rectangle l r d u) = fractal
   boundsEncl = [(l,d), (r,d), (r,u), (l,u)]
-  enclosure0 = 
+  enclosure0 =
     concat $ map encloseCurve curves
   encloseCurve curve =
     computeEnclosure (PlotItem_Curve curve) plotArea plotAccuracy (curve ^. curve2D_dom)
@@ -528,7 +570,7 @@ computeFractalEnclosure fractal plotArea plotAccuracy =
   applyTransform encl (vx,vy,_) =
     map (map applyOnPt) encl
     where
-    applyOnPt (x,y) = 
+    applyOnPt (x,y) =
       (vx `v3prod` (x,y,1)
       ,vy `v3prod` (x,y,1))
 
@@ -562,10 +604,10 @@ instance ToMisoString Rational where
 viewHeader :: [View Action]
 viewHeader =
   [
-    div_ 
-    [  
+    div_
+    [
       Miso.style_ (Map.singleton "font-size" "32pt")
-    ] 
+    ]
     [
       hr_ []
     , text "Exact function/curve/fractal plotter"
@@ -624,7 +666,7 @@ viewItemList _s@State{..} =
     ++ [ br_ [] ]
     where
     itemNames = Map.keys _state_items
-    viewItemButton itemName 
+    viewItemButton itemName
       | isSelected =
         flip button_ [text (ms itemName)] [ Miso.width_ "50",  activeColor, onClick (SelectItem Nothing) ]
       | otherwise =
@@ -636,7 +678,7 @@ viewItemList _s@State{..} =
 viewSelectedItemControls :: State -> [View Action]
 viewSelectedItemControls s@State{..} =
   case _state_selectedItem of
-    Just itemName -> 
+    Just itemName ->
       case _state_items ^. at itemName of
         Just (PlotItem_Function _) -> viewFnControls itemName s
         Just (PlotItem_Curve _) -> viewCurveControls itemName s
@@ -726,7 +768,7 @@ viewFractalControls itemName s@State{..} =
     viewCurve (i,curve) =
        viewEmbeddedCurveControls curve mkAction (itemName ++ "_curve" ++ show i) s
        where
-       mkAction c = 
+       mkAction c =
         NewPlotItem (itemName, PlotItem_Fractal $ fractal & affineFractal_curves . ix (i-1) .~ c)
     act_on_depth dMS =
       case (reads $ fromMisoString dMS) of
@@ -915,9 +957,9 @@ viewPlot State {..} =
         where
         style =
           case _state_selectedItem of
-            Just selectedName | selectedName == itemName -> 
+            Just selectedName | selectedName == itemName ->
               [stroke_ "black", fill_ "#ffc0cb", fillOpacity_ "0.7"]
-            _ -> 
+            _ ->
               [stroke_ "#707070", fill_ "#ffc0cb", fillOpacity_ "0.4"]
         pointsMS = ms $ intercalate " " $ map showPoint points
         showPoint (x,y) = show x ++ "," ++ show y

@@ -472,7 +472,7 @@ encloseSegmentItem p (xTolerance, yTolerance) yWd plotItem (l,r) =
       , w0x <= xTolerance && w0y <= yTolerance
       , fmap (\(r1,r2) -> (hullTwoRects r1 r2, Just w1)) e1
       , w1
-      , w1x <= xTolerance && w1y <= yTolerance)
+      , w1 <= xTolerance `max` yTolerance)
       where
       e0 = combine_exy e0x e0y
       e1 = combine_exy e1x e1y
@@ -483,7 +483,7 @@ encloseSegmentItem p (xTolerance, yTolerance) yWd plotItem (l,r) =
       w0 = max w0x w0y
       w1x = enclosure1Width rx_x e1x
       w1y = enclosure1Width rx_y e1y
-      w1 = max w1x w1y
+      w1 = w1x + w1y
       combine_exy
         (Just (Rectangle _ _ xiLL xiLR, Rectangle _ _ xiRL xiRR))
         (Just (Rectangle _ _ yiLL yiLR, Rectangle _ _ yiRL yiRR)) =
@@ -599,7 +599,7 @@ viewState s@State{..} =
     ++ viewAddItem s
     ++ viewItemList s
     ++ viewSelectedItemControls s
-    -- ++ [br_ [], text (ms $ show $ _state_item_encls), br_ []]
+    ++ [br_ [], text (ms $ show $ _state_item_encls), br_ []]
     -- ++ [br_ [], text (ms $ show $ _state_plotArea), br_ []]
     -- ++ [br_ [], text (ms $ show $ _state_item_accuracies), br_ []]
 

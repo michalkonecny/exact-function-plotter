@@ -355,10 +355,6 @@ enclWorker actionChan plotAreaTV itemTV name =
     startTime <- getCurrentTime
     foldM_ processSegment (True, startTime, []) (scaledEnclosure ++ [([], Nothing)])
     where
-    isFunction =
-      case plotItem of
-        PlotItem_Function _ -> True
-        _ -> False
     processSegment (isFirst, startTime, prevSegs) ([], _) =
       do
       writeChan actionChan
@@ -380,6 +376,10 @@ enclWorker actionChan plotAreaTV itemTV name =
     plotInterval = fromRational 1.0 -- 1.0 seconds
     scaledEnclosure = map scaleSeg enclosure
     appending = isFunction && isPanned
+    isFunction =
+      case plotItem of
+        PlotItem_Function _ -> True
+        _ -> False
     scaling = (scalingX, scalingY)
     scaleSeg (pts, mwidth) = (map scalePt pts, mwidth)
     scalePt (x,y) = (q2d $ scalingX * x, q2d $ scalingY * y)

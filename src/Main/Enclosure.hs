@@ -91,62 +91,68 @@ encloseSegmentItem ::
 encloseSegmentItem p (xTolerance, yTolerance) yWd plotItem (l,r) =
   case plotItem of
     (PlotItem_Function rx) ->
-      (hull0 e0 w0
+      (hull0 <$> e0
       , w0
       , w0 <= yTolerance
-      , fmap (\(r1,r2) -> (hullTwoRects r1 r2, Just w1)) e1
+      , fmap (\(r1,r2) -> (fst $ rect_hullAndWidthSq r1 r2, Just w1)) e1
       , w1
       , w1 <= yTolerance)
       where
       (e0, e1) = encloseSegmentRX p rx (l,r)
       w0 = enclosure0Width e0
-      w1 = enclosure1Width rx e1
+      w1 = enclosure1Width e1
+      hull0 (Rectangle xiL _ _ _, Rectangle _ xiR yiL yiR) =
+        ([(xiL, yiL), (xiR, yiL), (xiR, yiR), (xiL, yiR)], Just w0)
+      enclosure0Width (Just (_, Rectangle _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
+      enclosure0Width _ = yWd
+      -- tol1Vert = enclosure1VertTolerance lrEnclosure1
+      enclosure1Width (Just (Rectangle xiL _ yiLL _yiLR, Rectangle xiR _ yiRL yiRR)) =
+        xiW * yiW / (sqrt $ xiW^(2::Int) + yiD2^(2::Int))
+        where
+        yiW = (q2d yiRR) - (q2d yiRL)
+        xiW = (q2d xiR) - (q2d xiL)
+        yiD2 = yiD/2
+        yiD
+          | yiDavg >= 0 = yiDavg `min` (((max 0 yiLDd) `min` (max 0 yiRDd)) * xiW)
+          | otherwise = (-yiDavg) `min` (((max 0 (-yiLDd)) `min` (max 0 (-yiRDd))) * xiW)
+        yiDavg = (q2d yiRL) - (q2d yiLL)
+        D (_ : yiLDd : _) = evalRX () rx (xD () (q2d l))
+        D (_ : yiRDd : _) = evalRX () rx (xD () (q2d r))
+      enclosure1Width _ = yWd
 
     (PlotItem_Curve (Curve2D _dom rx_x rx_y)) ->
-      (hull0 e0 w0
-      , w0
-      , w0x <= xTolerance && w0y <= yTolerance
-      , fmap (\(r1,r2) -> (hullTwoRects r1 r2, Just w1)) e1
+      (hull0 <$> e0
+      , min w0x w0y
+      , w0x <= xTolerance || w0y <= yTolerance
+      , e1Hull
       , w1
       , w1 <= xTolerance `max` yTolerance)
       where
-      e0 = combine_exy e0x e0y
-      e1 = combine_exy e1x e1y
       (e0x, e1x) = encloseSegmentRX p rx_x (l,r)
       (e0y, e1y) = encloseSegmentRX p rx_y (l,r)
-      w0x = enclosure0Width e0x
-      w0y = enclosure0Width e0y
-      w0 = max w0x w0y
-      w1x = enclosure1Width rx_x e1x
-      w1y = enclosure1Width rx_y e1y
-      w1 = w1x + w1y
+      e0 = combine_exy <$> e0x <*> e0y
+      e1 = combine_exy <$> e1x <*> e1y
+      (w0x, w0y) = enclosure0Width e0
+      w0 = min w0x w0y
+      (e1Hull, w1) = 
+        case e1 of
+          Just (r1,r2) ->
+            let (e1H, w1Sq) = rect_hullAndWidthSq r1 r2 in
+              (Just (e1H, Just w1), sqrt $ q2d w1Sq)
+          _ -> (Nothing, yWd)
+      hull0 (_, Rectangle xiL xiR yiL yiR) =
+        ([(xiL, yiL), (xiR, yiL), (xiR, yiR), (xiL, yiR)], Just w0)
       combine_exy
-        (Just (Rectangle _ _ xiLL xiLR, Rectangle _ _ xiRL xiRR))
-        (Just (Rectangle _ _ yiLL yiLR, Rectangle _ _ yiRL yiRR)) =
-        Just (Rectangle xiLL xiLR yiLL yiLR, Rectangle xiRL xiRR yiRL yiRR)
-      combine_exy _ _ = Nothing
+        (Rectangle _ _ xiLL xiLR, Rectangle _ _ xiRL xiRR)
+        (Rectangle _ _ yiLL yiLR, Rectangle _ _ yiRL yiRR)
+        =
+        (Rectangle xiLL xiLR yiLL yiLR, Rectangle xiRL xiRR yiRL yiRR)
+      enclosure0Width
+        (Just (_, Rectangle xiRL xiRR yiRL yiRR))
+        = (q2d xiRR - q2d xiRL, q2d yiRR - q2d yiRL)
+      enclosure0Width _ = (yWd, yWd)
 
     (PlotItem_Fractal _) -> error "encloseSegmentItem called for a fractal"
-  where
-  hull0 (Just (Rectangle xiL _ _ _, Rectangle _ xiR yiL yiR)) w0 =
-    Just ([(xiL, yiL), (xiR, yiL), (xiR, yiR), (xiL, yiR)], Just w0)
-  hull0 _ _ = Nothing
-  enclosure0Width (Just (_, Rectangle _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
-  enclosure0Width _ = yWd
-  -- tol1Vert = enclosure1VertTolerance lrEnclosure1
-  enclosure1Width rx (Just (Rectangle xiL _ yiLL _yiLR, Rectangle xiR _ yiRL yiRR)) =
-    xiW * yiW / (sqrt $ xiW^(2::Int) + yiD2^(2::Int))
-    where
-    yiW = (q2d yiRR) - (q2d yiRL)
-    xiW = (q2d xiR) - (q2d xiL)
-    yiD2 = yiD/2
-    yiD
-      | yiDavg >= 0 = yiDavg `min` (((max 0 yiLDd) `min` (max 0 yiRDd)) * xiW)
-      | otherwise = (-yiDavg) `min` (((max 0 (-yiLDd)) `min` (max 0 (-yiRDd))) * xiW)
-    yiDavg = (q2d yiRL) - (q2d yiLL)
-    D (_ : yiLDd : _) = evalRX () rx (xD () (q2d l))
-    D (_ : yiRDd : _) = evalRX () rx (xD () (q2d r))
-  enclosure1Width _ _ = yWd
 
 encloseSegmentRX ::
   CDAR.Precision ->

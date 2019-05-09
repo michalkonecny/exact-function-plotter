@@ -22,6 +22,8 @@ executable function-plotter
       Expression
       Curve
       AffineFractal
+      Main.Model
+      Main.Enclosure
     build-depends:
         base < 5, 
         containers, time, mtl,

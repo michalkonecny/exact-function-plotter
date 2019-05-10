@@ -28,9 +28,9 @@ In the images below the same objects are plotted with a **low accuracy** so that
 The following are high and low accuracy plots of an infinitely winding spiral:
 
 <div>
-<img src="README-images/plot_spiralInf100.png" alt="infinite spiral - high accuracy" height="180" width="180">
-<img src="README-images/plot_spiralInf100-withEnclosure.png" alt="infinite spiral - low and high accuracy" height="180" width="180">
-<img src="README-images/plot_spiralInf100-enclosure.png" alt="infinite spiral - low accuracy" height="180" width="180">
+<img src="README-images/spiralInf100.png" alt="infinite spiral - high accuracy" height="180" width="180">
+<img src="README-images/spiralInf100-withEnclosure.png" alt="infinite spiral - low and high accuracy" height="180" width="180">
+<img src="README-images/spiralInf100-enclosure.png" alt="infinite spiral - low accuracy" height="180" width="180">
 </div>
 
 Also, see the [screenshots folder](screenshots) and [slides for a school outreach](regional-cstaster-MK-cid-slides.pdf) featuring plots produced by this tool. 

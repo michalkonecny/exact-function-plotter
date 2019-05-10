@@ -1,6 +1,14 @@
 # Exact Function/Curve/Fractal Plotter
 
-A web-browser widget for reliably plotting function graphs, parametric curves and certain fractals.
+A web widget for reliably plotting function graphs, parametric curves and certain fractals.
+
+[Try it now!](http://duck.aston.ac.uk/konecnym/plotter/)
+
+_Beware: The UI and plotting is quite slow due to the cost of reliable arbitrary-accuracy arithmetic running within your browser._
+
+To speed up rendering, tune the plots with very low accuracy and increase accuracy only for the final rendering.
+
+## Examples
 
 <div>
 <img src="README-images/xsinrecipx-accurate.png" alt="infinitely many waves" height="200" width="300">
@@ -17,14 +25,15 @@ In the images below the same objects are plotted with a **low accuracy** so that
 <img src="README-images/umbrella-inaccurate-above-accurate.png" alt="umbrella-like fractal - low accuracy" height="200" width="300">
 </div>
 
-[Try it now](http://duck.aston.ac.uk/konecnym/plotter/)
+The following are high and low accuracy plots of an infinitely winding spiral:
 
-Also, see the [screenshots folder](screenshots) and [slides for a school outreach](regional-cstaster-MK-cid-slides.pdf) featuring plots produced by this tool.
+<div>
+<img src="README-images/plot_spiralInf100.png" alt="infinite spiral - high accuracy" height="180" width="180">
+<img src="README-images/plot_spiralInf100-withEnclosure.png" alt="infinite spiral - low and high accuracy" height="180" width="180">
+<img src="README-images/plot_spiralInf100-enclosure.png" alt="infinite spiral - low accuracy" height="180" width="180">
+</div>
 
-_Beware: Work in progress. Currently the UI and plotting is slow._
-
-I recommend to tune the plots with very low accuracy and increase accuracy only for the final rendering.
-In case of fractals, accurate rendering typically takes several minutes.
+Also, see the [screenshots folder](screenshots) and [slides for a school outreach](regional-cstaster-MK-cid-slides.pdf) featuring plots produced by this tool. 
 
 <!-- Screenshots: -->
 

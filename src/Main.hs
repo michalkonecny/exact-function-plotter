@@ -53,8 +53,6 @@ main = do
   itemMapTV <- atomically $ newTVar Map.empty
   continueWithVars actionChan plotAreaTV itemMapTV
   where
-  initialPlotArea =
-    Rectangle (-1) 1 (-1) 1
   continueWithVars actionChan plotAreaTV itemMapTV =
     runJSaddle undefined $ startApp App {..}
     where
@@ -65,6 +63,9 @@ main = do
     events = defaultEvents
     subs   = [actionSub actionChan]
     mountPoint = Nothing -- mount point for application (Nothing defaults to 'body')
+
+initialPlotArea :: PlotArea
+initialPlotArea = Rectangle (-1) 1 (-1) 1
 
 initialTargetYSegments :: Int
 initialTargetYSegments = 100
@@ -527,6 +528,8 @@ viewPlotAreaControls s@State{..} =
     , button_ [ onClick (pani (-1,0)) ] [ text "→"]
     , button_ [ onClick (pani (0,-1)) ] [ text "↑"]
     , button_ [ onClick (pani (0,1)) ] [ text "↓"]
+    , text " "
+    , button_ [ onClick (NewPlotArea initialPlotArea) ] [ text "Reset"]
     , br_ []
     ]
     where

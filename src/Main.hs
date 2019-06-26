@@ -11,11 +11,11 @@ module Main where
 
 import Control.Concurrent
 import Control.Concurrent.STM (TVar, atomically, retry, readTVar, newTVar, writeTVar)
-import Control.Monad (void)
+import Control.Monad (void, foldM_)
 
 import Control.Monad.IO.Class (liftIO)
 
--- import Data.Time
+import Data.Time
 
 import Control.Lens as Lens hiding (view)
 
@@ -45,18 +45,37 @@ import qualified Data.CDAR as CDAR
 import Rectangle
 import Expression
 import Curve
+import AffineFractal
 
 type ItemName = String
 
 data PlotItem_Type =
-  PIT_Function | PIT_Curve -- | PIT_Fractal
+  PIT_Function | PIT_Curve | PIT_Fractal
   deriving (Show, Eq, Enum)
 
 data PlotItem =
     PlotItem_Function RX
   | PlotItem_Curve Curve2D
-  -- | PlotItem_Fractal LIFS_Fractal
-  deriving (Show, Eq)
+  | PlotItem_Fractal AffineFractal
+  deriving (Show, Eq)    -- renderEnclosure (itemName, enclosure) =
+    --   map renderSegment enclosure
+    --   where
+    --   renderSegment (rect1, rect2) =
+    --     polygon_  (points_ pointsMS : style) []
+    --     where
+    --     style =
+    --       case _state_selectedItem of
+    --         Just selectedName | selectedName == itemName -> 
+    --           [stroke_ "black", fill_ "#ffc0cb", fillOpacity_ "0.7"]
+    --         _ -> 
+    --           [stroke_ "#707070", fill_ "#ffc0cb", fillOpacity_ "0.4"]
+    --     pointsMS = ms $ intercalate " " $ map showPoint points
+    --     showPoint (x,y) = showR x ++ "," ++ showR y
+    --     showR :: Rational -> String
+    --     showR q = show $ (fromRational q :: Double)
+    --     points = map transformPt $ hullTwoRects rect1 rect2
+
+
 
 {-
     A function is represented symbolically and rendered via a piece-wise affine enclosure.
@@ -73,10 +92,17 @@ data State
     , _state_items :: Map.Map ItemName PlotItem
     , _state_item_accuracies :: Map.Map ItemName PlotAccuracy
     , _state_item_workers :: Map.Map ItemName ThreadId
-    , _state_item_encls :: Map.Map ItemName PAEnclosure
+    , _state_item_encls :: Map.Map ItemName (Scaling, PAEnclosure Double)
+        -- the two rationals are x,y scaling factors, respectively
+        -- the coordinates in the enclosure have been multiplied by these factors before converting to Double
+        -- most of the time these factors agree with the plotting scale, allowing the coordinates to be used
+        -- for plotting after a translation
+
     -- , _state_plotArea_Movement :: PlotAreaMovement
   }
   deriving (Show, Eq)
+
+type Scaling = (Rational, Rational)
 
 -- makeLenses ''State
 
@@ -90,7 +116,7 @@ state_item_accuracies :: Lens' State (Map.Map ItemName PlotAccuracy)
 state_item_accuracies wrap (State a b c d e f) = fmap (\d' -> State a b c d' e f) (wrap d)
 state_item_workers :: Lens' State (Map.Map ItemName ThreadId)
 state_item_workers wrap (State a b c d e f) = fmap (\e' -> State a b c d e' f) (wrap e)
-state_item_encls :: Lens' State (Map.Map ItemName PAEnclosure)
+state_item_encls :: Lens' State (Map.Map ItemName (Scaling, PAEnclosure Double))
 state_item_encls wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
 -- state_plotArea_Movement :: Lens' State PlotAreaMovement
 -- state_plotArea_Movement wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
@@ -129,9 +155,9 @@ type PlotArea = Rectangle Rational
 -- plotAreaMovement_mousePos :: Lens' PlotAreaMovement (Maybe (Int, Int))
 -- plotAreaMovement_mousePos wrap (PlotAreaMovement a b) = fmap (\b' -> PlotAreaMovement a b') (wrap b)
 
-type PAEnclosure = [PASegment]
+type PAEnclosure t = [PASegment t]
 
-type PASegment = (Rectangle Rational, Rectangle Rational)
+type PASegment t = [(t, t)] -- closed polyline
 
 data Action
   = NoOp
@@ -140,7 +166,7 @@ data Action
   | NewPlotItem !(ItemName, PlotItem)
   | NewAccuracy !(ItemName, PlotAccuracy)
   | NewWorker !(ItemName, ThreadId)
-  | NewEnclosureSegments !(ItemName, Bool, PAEnclosure)
+  | NewEnclosureSegments !(ItemName, Bool, (Rational, Rational), PAEnclosure Double)
   -- | SetDrag Bool
   deriving (Show, Eq)
 
@@ -236,15 +262,15 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
           & state_item_encls . at name .~ Nothing
     (NewWorker (name, tid)) ->
       noEff $ s & state_item_workers . at name .~ Just tid
-    (NewEnclosureSegments (name, shouldAppend, encl)) ->
+    (NewEnclosureSegments (name, shouldAppend, scaling, encl)) ->
         (s' <#) $ liftIO $ do
           _ <- canvasDrawPlot s'
           return NoOp
       where
       s' = s & state_item_encls . at name %~ addEncl
-      addEncl (Just oldEncl)
-        | shouldAppend = Just $ oldEncl ++ encl
-      addEncl _ = Just encl
+      addEncl (Just (oldScaling, oldEncl))
+        | shouldAppend && oldScaling == scaling = Just $ (scaling, oldEncl ++ encl)
+      addEncl _ = Just (scaling, encl)
     -- SetDrag isDrag ->
     --   if isDrag 
     --     then noEff s'
@@ -321,7 +347,25 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
         do
         threadId <- forkIO $ sendNewEnclosureSegments isPanned plotArea plotAccuracy domC
         case isPanned of
-          True -> waitForAreaAndAct (threadId : threadIds) (Just (dom, plotArea, plotAccuracy))
+          True -> waitForAreaAndAct (threadId : threadIds) (Just (dom, plotArea, plotAccuracy))    -- renderEnclosure (itemName, enclosure) =
+    --   map renderSegment enclosure
+    --   where
+    --   renderSegment (rect1, rect2) =
+    --     polygon_  (points_ pointsMS : style) []
+    --     where
+    --     style =
+    --       case _state_selectedItem of
+    --         Just selectedName | selectedName == itemName -> 
+    --           [stroke_ "black", fill_ "#ffc0cb", fillOpacity_ "0.7"]
+    --         _ -> 
+    --           [stroke_ "#707070", fill_ "#ffc0cb", fillOpacity_ "0.4"]
+    --     pointsMS = ms $ intercalate " " $ map showPoint points
+    --     showPoint (x,y) = showR x ++ "," ++ showR y
+    --     showR :: Rational -> String
+    --     showR q = show $ (fromRational q :: Double)
+    --     points = map transformPt $ hullTwoRects rect1 rect2
+
+
           _    -> waitForAreaAndAct [threadId] (Just (dom, plotArea, plotAccuracy))
       _ ->
         waitForAreaAndAct threadIds (Just (dom, plotArea, plotAccuracy)) -- ie do nothing this time
@@ -338,15 +382,49 @@ enclWorker actionChan plotAreaTV fnPlotAccuracyTV name plotItem =
     plotArea_x pa = (xL, xR)
       where
       (Rectangle xL xR _ _) = pa
+  
+  isFunction =
+    case plotItem of
+      PlotItem_Function _ -> True
+      _ -> False
 
   sendNewEnclosureSegments isPanned plotArea plotAccuracy dom =
-    writeChan actionChan
-      (NewEnclosureSegments (name, shouldAppend, enclosure))
+    do
+    startTime <- getCurrentTime
+    foldM_ processSegment (True, startTime, []) (scaledEnclosure ++ [[]])
     where
-    shouldAppend = isPanned
-    enclosure = computeEnclosure plotItem plotArea plotAccuracy dom
+    processSegment (isFirst, startTime, prevSegs) [] = 
+      do
+      writeChan actionChan
+        (NewEnclosureSegments (name, if isFirst then appending else True, scaling, prevSegs))
+      yield
+      pure (False, startTime, [])
+    processSegment (isFirst, startTime, prevSegs) seg = 
+      do
+      let s = sum $ map snd seg
+      segTime <- s `seq` getCurrentTime
+      if segTime `diffUTCTime` startTime > plotInterval
+        then do
+          writeChan actionChan
+            (NewEnclosureSegments (name, if isFirst then appending else True, scaling, seg : prevSegs))
+          yield
+          pure (False, segTime, [])
+        else do
+          pure (isFirst, startTime, seg : prevSegs)
+    plotInterval = fromRational 0.5 -- 0.5 seconds
+    scaledEnclosure = map (map scalePt) enclosure
+    appending = isFunction && isPanned
+    scaling = (scalingX, scalingY)
+    scalePt (x,y) = (q2d $ scalingX * x, q2d $ scalingY * y)
+    scalingX = wQ/(xR-xL)
+    scalingY = hQ/(yR-yL)
+    Rectangle xL xR yL yR = plotArea
+    enclosure =
+      case plotItem of
+        PlotItem_Fractal fr -> computeFractalEnclosure fr plotArea plotAccuracy
+        _ -> computeEnclosure plotItem plotArea plotAccuracy dom
 
-computeEnclosure :: PlotItem -> PlotArea -> PlotAccuracy -> (Rational, Rational) -> PAEnclosure
+computeEnclosure :: PlotItem -> PlotArea -> PlotAccuracy -> (Rational, Rational) -> (PAEnclosure Rational)
 computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
   enclosure
   where
@@ -384,13 +462,13 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
     (lrEnclosure0, good0, lrEnclosure1, good1) =
       case plotItem of
         (PlotItem_Function rx) ->
-          (e0, w0 <= yTolerance, e1, w1 <= yTolerance)
+          (hull0 e0, w0 <= yTolerance, fmap (uncurry hullTwoRects) e1, w1 <= yTolerance)
           where
           (e1, e0) = encloseSegment rx (l,r)
           w0 = enclosure0Width e0
           w1 = enclosure1Width rx e1
         (PlotItem_Curve (Curve2D _dom rx_x rx_y)) ->
-          (e0, g0, e1, g1)
+          (hull0 e0, g0, fmap (uncurry hullTwoRects) e1, g1)
           where
           e0 = combine_exy e0x e0y
           e1 = combine_exy e1x e1y
@@ -407,6 +485,9 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
             (Just (Rectangle _ _ yiLL yiLR, Rectangle _ _ yiRL yiRR)) =
             Just (Rectangle xiLL xiLR yiLL yiLR, Rectangle xiRL xiRR yiRL yiRR)
           combine_exy _ _ = Nothing
+        (PlotItem_Fractal _) -> error "computeEnclosure called for a fractal"
+    hull0 (Just (Rectangle xiL _ _ _, Rectangle _ xiR yiL yiR)) = Just [(xiL, yiL), (xiR, yiL), (xiR, yiR), (xiL, yiR)]
+    hull0 _ = Nothing
     enclosure0Width (Just (_, Rectangle _ _ yiL yiR)) = (q2d yiR) - (q2d yiL)
     enclosure0Width _ = yWd
     -- tol1Vert = enclosure1VertTolerance lrEnclosure1
@@ -459,6 +540,35 @@ computeEnclosure plotItem plotArea plotAccuracy (tL, tR) =
   xPrec = 10 + (round $ negate $ logBase 2 (minSegSize))
   yPrec = 10 + (round $ negate $ logBase 2 (yTolerance))
 
+computeFractalEnclosure :: AffineFractal -> PlotArea -> PlotAccuracy -> (PAEnclosure Rational)
+computeFractalEnclosure fractal plotArea plotAccuracy =
+  enclosure0
+  ++ (concat $ map (applyTransform enclosure0) $ concat transforms)
+  ++ (concat $ map (applyTransform [boundsEncl]) lastLayerTransfroms)
+  where
+  AffineFractal curves transformations depth (Rectangle l r d u) = fractal
+  boundsEncl = [(l,d), (r,d), (r,u), (l,u)]
+  enclosure0 = 
+    concat $ map encloseCurve curves
+  encloseCurve curve =
+    computeEnclosure (PlotItem_Curve curve) plotArea plotAccuracy (curve ^. curve2D_dom)
+  transformationsToDepth n
+    | n <= 0 = [[aftIdentity]]
+    | otherwise =
+      [ t `aftCompose` tPrev | t <- transformations, tPrev <- prevLayer] : prevTransformations
+    where
+    prevTransformations@(prevLayer :_) = transformationsToDepth (n-1)
+  (lastLayerTransfroms : transforms) = transformationsToDepth depth
+  applyTransform encl (vx,vy,_) =
+    map (map applyOnPt) encl
+    where
+    applyOnPt (x,y) = 
+      (vx `v3prod` (x,y,1)
+      ,vy `v3prod` (x,y,1))
+
+
+
+
 ---------------------------------------------------------------------------------
 --- VIEW
 ---------------------------------------------------------------------------------
@@ -470,6 +580,7 @@ viewState s@State{..} =
       Miso.style_ (Map.singleton "font-size" "20pt")
     ] $
     []
+    ++ viewHeader
     ++ viewPlotAreaControls s
     ++ viewPlot s
     ++ viewAddItem s
@@ -482,28 +593,60 @@ instance ToMisoString Rational where
   toMisoString q = s2ms $ printf "%.4f" (q2d q)
   fromMisoString _ = error "fromMisoString not defined for Rational"
 
+viewHeader :: [View Action]
+viewHeader =
+  [
+    div_ 
+    [  
+      Miso.style_ (Map.singleton "font-size" "32pt")
+    ] 
+    [
+      hr_ []
+    , text "Exact function/curve/fractal plotter"
+    ]
+    , Miso.a_ [ href_ "https://github.com/michalkonecny/exact-function-plotter" ] [text "(github)"]
+    , hr_ []
+    ,
+    text "2019, Michal Konečný, Aston University, Birmingham UK"
+    , br_ []
+    , text "built using "
+    , Miso.a_ [ href_ "https://github.com/jensblanck/cdar" ] [ text "CDAR" ]
+    , text " "
+    , Miso.a_ [ href_ "https://github.com/michalkonecny/cdar/tree/mBound-noshift" ] [ text "(MK's fork)" ]
+    , text ", "
+    , Miso.a_ [ href_ "https://haskell-miso.org/" ] [ text "Miso" ]
+    , text ", "
+    , Miso.a_ [ href_ "https://www.haskell.org/" ] [ text "Haskell" ]
+    , hr_ []
+  ]
+
 viewAddItem :: State -> [View Action]
 viewAddItem _s@State{..} =
   [
     text "Add: "
   , flip button_ [text "function"] [ onClick (NewPlotItem (freshName "f", (PlotItem_Function RXVarX)))]
-  , flip button_ [text "sin(10x^2)"] [ onClick (NewPlotItem (freshName "sin(10x^2)", (PlotItem_Function (rx "sin(10*x^2)"))))]
-  , flip button_ [text "x*sin(10/x)"] [ onClick (NewPlotItem (freshName "x*sin(10/x)", (PlotItem_Function (rx "x*sin(10/x)"))))]
+  , flip button_ [text "sin(10x^2)"] [ onClick (NewPlotItem (freshName "sin(10x^2)", (PlotItem_Function (s2rx "sin(10*x^2)"))))]
+  , flip button_ [text "x*sin(10/x)"] [ onClick (NewPlotItem (freshName "x*sin(10/x)", (PlotItem_Function (s2rx "x*sin(10/x)"))))]
   , text "; "
   , flip button_ [text "curve"] [ onClick (NewPlotItem (freshName "c", (PlotItem_Curve defaultCurve2D)))]
   , flip button_ [text "spiral"] [ onClick (NewPlotItem (freshName "spiral", (PlotItem_Curve spiral)))]
   , flip button_ [text "infty"] [ onClick (NewPlotItem (freshName "infty", (PlotItem_Curve infty)))]
+  , flip button_ [text "mesh"] [ onClick (NewPlotItem (freshName "mesh", (PlotItem_Curve mesh)))]
+  , text "; "
+  , flip button_ [text "fractal"] [ onClick (NewPlotItem (freshName "fr", (PlotItem_Fractal defaultFractal)))]
+  , flip button_ [text "tree"] [ onClick (NewPlotItem (freshName "tree", (PlotItem_Fractal treeFractal)))]
+  , flip button_ [text "umbr"] [ onClick (NewPlotItem (freshName "umbr", (PlotItem_Fractal umbrellaFractal)))]
   , br_ []
   ]
   where
   itemNames = Map.keys _state_items
-  rx s = case parseRX "x" s of Right r -> r; _ -> RXVarX 
   freshName prefix =
     case find (not . flip elem itemNames) $ prefix : [ prefix ++ show (i :: Int) | i <- [2..] ] of
       Just nm -> nm
       _ -> error "failed to find a default function name"
-  spiral = Curve2D (0, 50) (rx "0.02*x*sin(x)") (rx "0.02*x*cos(x)")
-  infty = Curve2D (0, 6.29) (rx "0.8*sin(x)") (rx "0.5*sin(2*x)")
+  spiral = Curve2D (0, 50) (s2rx "0.02*x*sin(x)") (s2rx "0.02*x*cos(x)")
+  infty = Curve2D (0, 6.29) (s2rx "0.8*sin(x)") (s2rx "0.5*sin(2*x)")
+  mesh = Curve2D (0, 6.29) (s2rx "0.8*sin(5*x)") (s2rx "0.5*sin(12*x)")
   
 
 viewItemList :: State -> [View Action]
@@ -531,8 +674,132 @@ viewSelectedItemControls s@State{..} =
       case _state_items ^. at itemName of
         Just (PlotItem_Function _) -> viewFnControls itemName s
         Just (PlotItem_Curve _) -> viewCurveControls itemName s
+        Just (PlotItem_Fractal _) -> viewFractalControls itemName s
         _ -> []
     _ -> []
+
+viewFnControls :: ItemName -> State -> [View Action]
+viewFnControls itemName s@State{..} =
+    [
+      text $ s2ms $ printf "Function %s(x) = " itemName
+    , input_ [ size_ "80", value_ (ms $ showRX "x" rx), onChange $ act_on_function]
+    , br_ []
+    ]
+    ++ viewPlotAccuracy itemName s
+    where
+    rx =
+      case _state_items ^. at itemName of
+        Just (PlotItem_Function rx2) -> rx2
+        _ -> RXVarX
+    act_on_function fMS =
+      case (parseRX "x" $ fromMisoString fMS) of
+        Right rx2 -> NewPlotItem (itemName, PlotItem_Function rx2)
+        Left _errmsg -> NoOp -- TODO
+
+viewEmbeddedCurveControls :: Curve2D -> (Curve2D -> Action) -> String -> State -> [View Action]
+viewEmbeddedCurveControls curve mkAction curveName _s@State{..} =
+    [
+      text $ s2ms $ printf "Curve %s_x(t) = " curveName
+    , input_ [ size_ "80", value_ (ms $ showRX "t" $ curve ^. curve2D_x), onChange $ act_on_x]
+    , br_ []
+    , text $ s2ms $ printf "Curve %s_y(t) = " curveName
+    , input_ [ size_ "80", value_ (ms $ showRX "t" $ curve ^. curve2D_y), onChange $ act_on_y]
+    , br_ []
+    , input_ [ size_ "8", value_ (ms $ curve ^. curve2D_dom . _1), onChange $ act_on_t _1]
+    , text " <= t <= "
+    , input_ [ size_ "8", value_ (ms $ curve ^. curve2D_dom . _2), onChange $ act_on_t _2]
+    , br_ []
+    ]
+    where
+    act_on_x fMS =
+      case (parseRX "t" $ fromMisoString fMS) of
+        Right rx -> mkAction $ curve & curve2D_x .~ rx
+        Left _errmsg -> NoOp -- TODO
+    act_on_y fMS =
+      case (parseRX "t" $ fromMisoString fMS) of
+        Right rx -> mkAction $ curve & curve2D_y .~ rx
+        Left _errmsg -> NoOp -- TODO
+    act_on_t domlens tMS =
+      case reads (fromMisoString tMS) of
+        [(t,_)] -> mkAction $ curve & curve2D_dom . domlens .~ (d2q t)
+        _ -> NoOp
+
+viewCurveControls :: ItemName -> State -> [View Action]
+viewCurveControls itemName s@State{..} =
+    viewEmbeddedCurveControls curve mkAction itemName s
+    ++ viewPlotAccuracy itemName s
+    where
+    mkAction c = NewPlotItem (itemName, PlotItem_Curve c)
+    curve =
+      case _state_items ^. at itemName of
+        Just (PlotItem_Curve c) -> c
+        _ -> defaultCurve2D
+
+viewFractalControls :: ItemName -> State -> [View Action]
+viewFractalControls itemName s@State{..} =
+    [
+      text $ s2ms $ printf "Fractal %s, plot depth:" itemName
+    , input_ [ size_ "2", value_ (ms $ depth), onChange $ act_on_depth]
+    , br_ []
+    , text $ s2ms $ printf "Fractal %s, curves:" itemName
+    , br_ []
+    ]
+    ++ (concat $ map viewCurve $ zip [1..] curves) ++
+    [
+      text $ s2ms $ printf "Fractal %s, transforms:" itemName
+    , br_ []
+    ]
+    -- ++ (concat $ map viewTransform $ zip [1..] transforms) -- TODO
+    ++ viewPlotAccuracy itemName s
+    where
+    fractal =
+      case _state_items ^. at itemName of
+        Just (PlotItem_Fractal fr) -> fr
+        _ -> defaultFractal
+    AffineFractal curves _transforms depth _bounds = fractal
+    viewCurve (i,curve) =
+       viewEmbeddedCurveControls curve mkAction (itemName ++ "_curve" ++ show i) s
+       where
+       mkAction c = 
+        NewPlotItem (itemName, PlotItem_Fractal $ fractal & affineFractal_curves . ix (i-1) .~ c)
+    act_on_depth dMS =
+      case (reads $ fromMisoString dMS) of
+        [(d,"")] -> NewPlotItem (itemName, PlotItem_Fractal $ fractal & affineFractal_depth .~ d)
+        _ -> NoOp
+
+viewPlotAccuracy :: ItemName -> State -> [View Action]
+viewPlotAccuracy itemName s@State{..} =
+    [
+      text $ s2ms $ printf "%s accuracy ~ w/" itemName
+    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_targetYSegments $ pac), onChange $ act_on_targetYsegs ]
+    -- , br_ []
+    , text "  "
+    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_minXSegments $ pac), onChange $ act_on_minXsegs ]
+    , text " <= segments <= "
+    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_maxXSegments $ pac), onChange $ act_on_maxXsegs ]
+    , br_ []
+    ]
+    where
+    pac =
+      case s ^. state_item_accuracies . at itemName of
+        Just fpac -> fpac
+        _ -> defaultPlotAccuracy
+    act_on_targetYsegs =
+      act_on_plotAccuracy plotAccuracy_targetYsegments
+    act_on_maxXsegs =
+      act_on_plotAccuracy plotAccuracy_maxXSegments
+    act_on_minXsegs =
+      act_on_plotAccuracy plotAccuracy_minXSegments
+    act_on_plotAccuracy paclens nMS =
+        case reads (fromMisoString nMS) of
+            [(n,_)] -> NewAccuracy (itemName, fpac & paclens .~ n)
+                where
+                fpac =
+                  case (s ^. state_item_accuracies . at itemName) of
+                    Just fpac2 -> fpac2
+                    _ ->  defaultPlotAccuracy
+            _ -> NoOp
+
 
 viewPlotAreaControls :: State -> [View Action]
 viewPlotAreaControls s@State{..} =
@@ -573,91 +840,6 @@ viewPlotAreaControls s@State{..} =
       NewPlotArea $ rect_move ((1/10)*xi, (1/10)*yi) _state_plotArea
     -- sumSegment (Rectangle _ yLL yLR, Rectangle _ yRL yRR) =
     --   sum $ map fromRational [yLL,yLR,yRL,yRR] :: Double
-
-viewFnControls :: ItemName -> State -> [View Action]
-viewFnControls itemName s@State{..} =
-    [
-      text $ s2ms $ printf "Function %s(x) = " itemName
-    , input_ [ size_ "80", value_ (ms $ showRX "x" rx), onChange $ act_on_function]
-    , br_ []
-    ]
-    ++ viewPlotAccuracy itemName s
-    where
-    rx =
-      case _state_items ^. at itemName of
-        Just (PlotItem_Function rx2) -> rx2
-        _ -> RXVarX
-    act_on_function fMS =
-      case (parseRX "x" $ fromMisoString fMS) of
-        Right rx2 -> NewPlotItem (itemName, PlotItem_Function rx2)
-        Left _errmsg -> NoOp -- TODO
-
-viewCurveControls :: ItemName -> State -> [View Action]
-viewCurveControls itemName s@State{..} =
-    [
-      text $ s2ms $ printf "Curve %s_x(t) = " itemName
-    , input_ [ size_ "80", value_ (ms $ showRX "t" $ curve ^. curve2D_x), onChange $ act_on_x]
-    , br_ []
-    , text $ s2ms $ printf "Curve %s_y(t) = " itemName
-    , input_ [ size_ "80", value_ (ms $ showRX "t" $ curve ^. curve2D_y), onChange $ act_on_y]
-    , br_ []
-    , input_ [ size_ "8", value_ (ms $ curve ^. curve2D_dom . _1), onChange $ act_on_t _1]
-    , text " <= t <= "
-    , input_ [ size_ "8", value_ (ms $ curve ^. curve2D_dom . _2), onChange $ act_on_t _2]
-    , br_ []
-    ]
-    ++ viewPlotAccuracy itemName s
-    where
-    curve =
-      case _state_items ^. at itemName of
-        Just (PlotItem_Curve c) -> c
-        _ -> defaultCurve2D
-    act_on_x fMS =
-      case (parseRX "t" $ fromMisoString fMS) of
-        Right rx -> NewPlotItem (itemName, PlotItem_Curve $ curve & curve2D_x .~ rx)
-        Left _errmsg -> NoOp -- TODO
-    act_on_y fMS =
-      case (parseRX "t" $ fromMisoString fMS) of
-        Right rx -> NewPlotItem (itemName, PlotItem_Curve $ curve & curve2D_y .~ rx)
-        Left _errmsg -> NoOp -- TODO
-    act_on_t domlens tMS =
-      case reads (fromMisoString tMS) of
-        [(t,_)] -> NewPlotItem (itemName, PlotItem_Curve $ curve & curve2D_dom . domlens .~ (d2q t))
-        _ -> NoOp
-
-viewPlotAccuracy :: ItemName -> State -> [View Action]
-viewPlotAccuracy itemName s@State{..} =
-    [
-      text $ s2ms $ printf "%s(x) accuracy ~ w/" itemName
-    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_targetYSegments $ pac), onChange $ act_on_targetYsegs ]
-    -- , br_ []
-    , text "  "
-    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_minXSegments $ pac), onChange $ act_on_minXsegs ]
-    , text " <= segments <= "
-    , input_ [ size_ "5", value_ (ms $ show $ _plotAccuracy_maxXSegments $ pac), onChange $ act_on_maxXsegs ]
-    , br_ []
-    ]
-    where
-    pac =
-      case s ^. state_item_accuracies . at itemName of
-        Just fpac -> fpac
-        _ -> defaultPlotAccuracy
-    act_on_targetYsegs =
-      act_on_plotAccuracy plotAccuracy_targetYsegments
-    act_on_maxXsegs =
-      act_on_plotAccuracy plotAccuracy_maxXSegments
-    act_on_minXsegs =
-      act_on_plotAccuracy plotAccuracy_minXSegments
-    act_on_plotAccuracy paclens nMS =
-        case reads (fromMisoString nMS) of
-            [(n,_)] -> NewAccuracy (itemName, fpac & paclens .~ n)
-                where
-                fpac =
-                  case (s ^. state_item_accuracies . at itemName) of
-                    Just fpac2 -> fpac2
-                    _ ->  defaultPlotAccuracy
-            _ -> NoOp
-
 
 h,w :: Integer
 w = 800
@@ -726,7 +908,7 @@ viewPlot State {..} =
     --   aux msel (this@(itemName, _):rest)
     --     |  _state_selectedItem == Just itemName =
     --       aux (Just this) rest
-    --     | otherwise =
+    --     | otherwise =oldEncl
     --       this : aux msel rest
 
     -- viewHeightAttr = Svg.height_ (ms (q2d hQ))
@@ -772,10 +954,10 @@ viewPlot State {..} =
     --   where
     --     transformSegment (rect1, rect2) = map transformPt $ hullTwoRects rect1 rect2
 
-    -- renderEnclosure (itemName, enclosure) =
+    -- renderEnclosure (itemName, ((scalingX, scalingY), enclosure)) =
     --   map renderSegment enclosure
     --   where
-    --   renderSegment (rect1, rect2) =
+    --   renderSegment pointsPre =
     --     polygon_  (points_ pointsMS : style) []
     --     where
     --     style =
@@ -785,10 +967,23 @@ viewPlot State {..} =
     --         _ -> 
     --           [stroke_ "#707070", fill_ "#ffc0cb", fillOpacity_ "0.4"]
     --     pointsMS = ms $ intercalate " " $ map showPoint points
-    --     showPoint (x,y) = showR x ++ "," ++ showR y
-    --     showR :: Rational -> String
-    --     showR q = show $ (fromRational q :: Double)
-    --     points = map transformPt $ hullTwoRects rect1 rect2
+    --     showPoint (x,y) = show x ++ "," ++ show y
+    --     -- showR :: Rational -> String
+    --     -- showR q = show $ (fromRational q :: Double)
+    --     transformPt (x,y) = (trX x, trY y)
+    --     trX x
+    --       | sameScaleX = (x - shiftX)
+    --       | otherwise = (x - shiftX)*rescaleX
+    --     trY y
+    --       | sameScaleY = (q2d hQ) - (y - shiftY)
+    --       | otherwise = (q2d hQ) - (y - shiftY)*rescaleY
+    --     sameScaleX = (scalingX == wQ/(xR-xL))
+    --     sameScaleY = (scalingY == - hQ/(yR-yL))
+    --     shiftX = q2d $ xL * scalingX
+    --     shiftY = q2d $ yL * scalingY
+    --     rescaleX = q2d $ wQ/((xR-xL) *scalingX)
+    --     rescaleY = q2d $ hQ/((yR-yL) *scalingY)
+    --     points = map transformPt pointsPre
 
 canvasDrawPlot :: State -> IO ()
 canvasDrawPlot State {..} = do
@@ -810,20 +1005,38 @@ canvasDrawPlot State {..} = do
 
     Rectangle xL xR yL yR = _state_plotArea
     transformPt (x,y) = (transformX x, transformY y)
+    -- [xLd, xRd, yLd, yRd] = map q2d [xL, xR, yL, yR]
     transformX x = (x-xL)*wQ/(xR-xL)
     transformY y = hQ-(y-yL)*hQ/(yR-yL)
 
-    getPoints (_, enclosure) =
+    getPoints (_, ((scalingX, scalingY), enclosure)) =
       map transformSegment enclosure
       where
-        transformSegment (rect1, rect2) = map transformPt $ hullTwoRects rect1 rect2
+      transformSegment pointsPre =
+        map transformPt pointsPre
+        where
+        transformPt (x,y) = (trX x, trY y)
+        trX x
+          | sameScaleX = (x - shiftX)
+          | otherwise = (x - shiftX)*rescaleX
+        trY y
+          | sameScaleY = (q2d hQ) - (y - shiftY)
+          | otherwise = (q2d hQ) - (y - shiftY)*rescaleY
+        sameScaleX = (scalingX == wQ/(xR-xL))
+        sameScaleY = (scalingY == - hQ/(yR-yL))
+        shiftX = q2d $ xL * scalingX
+        shiftY = q2d $ yL * scalingY
+        rescaleX = q2d $ wQ/((xR-xL) *scalingX)
+        rescaleY = q2d $ hQ/((yR-yL) *scalingY)
+        points = map transformPt pointsPre
 
--- drawPolygon :: [(Rational, Rational)] -> IO ()
+
+drawPolygon :: Canvas.Context -> [(Double, Double)] -> IO ()
 drawPolygon ctx ((x1,y1):points) = do
   beginPath ctx
-  moveTo (q2d x1) (q2d y1) ctx
-  mapM_ (\(xi,yi) -> lineTo (q2d xi) (q2d yi) ctx) points
-  lineTo (q2d x1) (q2d y1) ctx
+  moveTo x1 y1 ctx
+  mapM_ (\(xi,yi) -> lineTo xi yi ctx) points
+  lineTo x1 y1 ctx
   fillStyle 255 170 128 1 ctx
   fill ctx
   stroke ctx

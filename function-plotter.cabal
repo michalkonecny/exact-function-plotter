@@ -21,10 +21,11 @@ executable function-plotter
       Rectangle
       Expression
       Curve
+      AffineFractal
     build-depends:
         base < 5, 
         containers, time, mtl,
-        stm,
+        stm, time,
         lens, parsec,
         miso, jsaddle, ghcjs-dom, ghcjs-base,
         cdar

@@ -1,8 +1,4 @@
 -- {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -50,6 +46,13 @@ data RX =
   | RXUn UnOp RX
   | RXBin BinOp RX RX
   deriving (Show, Eq, Ord)
+
+s2rx :: String -> RX
+s2rx s = 
+  case parseRX "x" s of 
+    Right r -> r
+    Left errMsg -> 
+      error $ printf "failed to parse:\n  %s\n  %s" s (show errMsg)
 
 data Constant = Pi | E
   deriving (Show, Eq, Ord)

@@ -25,7 +25,7 @@ import Text.Printf
 
 import Data.List (find)
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, isJust)
 -- import Data.Ratio ((%))
 
 -- | Miso framework import
@@ -300,9 +300,11 @@ updateState actionChan plotAreaTV plotAccuracyTV s action =
     --         in
     --         Rectangle (xL - xd) (xR - xd) (yL + yd) (yR + yd)
     --       _ -> extents
-    SelectItem maybeItemName -> ((s & state_selectedItem .~ maybeItemName) <#) $ liftIO $ do
-      _ <- canvasDrawPlot s
+    SelectItem maybeItemName -> (s' <#) $ liftIO $ do
+      _ <- canvasDrawPlot s'
       return NoOp
+      where
+      s' = s & state_selectedItem .~ maybeItemName
     NoOp -> noEff s
 
 
@@ -990,7 +992,7 @@ canvasDrawPlot State {..} = do
     ctx <- getCtx
     clearCanvas ctx
     -- Canvas.transform ctx
-    mapM_ (drawPolygon ctx) $ head $ map getPoints $ moveSelectedLast $ Map.toList _state_item_encls
+    mapM_ (drawEnclosure ctx) $ enclosures
     save ctx
     where
     moveSelectedLast = aux Nothing
@@ -1003,6 +1005,26 @@ canvasDrawPlot State {..} = do
         | otherwise =
           this : aux msel rest
 
+    enclosures =
+      reverse $ 
+        zip ((isJust _state_selectedItem) : repeat False) $ map getPoints $ 
+          moveSelectedLast $ Map.toList _state_item_encls
+
+    drawEnclosure ctx (isSelected, polygons) =
+      do
+      setStyle
+      mapM_ (drawPolygon ctx) polygons
+      where
+      setStyle
+        | isSelected =
+          do
+          fillStyle 255 192 203 0.7 ctx
+          strokeStyle 0 0 0 1 ctx
+        | otherwise =
+          do
+          fillStyle 255 192 2013 0.4 ctx
+          strokeStyle 0 0 0 0.7 ctx
+      
     Rectangle xL xR yL yR = _state_plotArea
     transformPt (x,y) = (transformX x, transformY y)
     -- [xLd, xRd, yLd, yRd] = map q2d [xL, xR, yL, yR]
@@ -1037,7 +1059,6 @@ drawPolygon ctx ((x1,y1):points) = do
   moveTo x1 y1 ctx
   mapM_ (\(xi,yi) -> lineTo xi yi ctx) points
   lineTo x1 y1 ctx
-  fillStyle 255 170 128 1 ctx
   fill ctx
   stroke ctx
 

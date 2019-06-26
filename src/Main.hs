@@ -21,9 +21,9 @@ import Language.Javascript.JSaddle (runJSaddle)
 
 import Text.Printf
 
-import Data.List (intercalate, find)
+import Data.List (find)
 import qualified Data.Map as Map
--- import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, isJust)
 -- import Data.Ratio ((%))
 
 -- | Miso framework import
@@ -31,8 +31,11 @@ import qualified Miso
 import Miso hiding (at)
 import Miso.String (MisoString, ms, fromMisoString, ToMisoString(..))
 -- import Miso.Event.Types
-import Miso.Svg as Svg
+-- import Miso.Svg as Svg
 -- import Data.Aeson.Types
+
+-- Javascript Canvas
+import JavaScript.Web.Canvas as Canvas hiding (Left, Right)
 
 -- import qualified Data.CDAR as CDAR
 -- import Data.CDAR (Dyadic)
@@ -92,11 +95,14 @@ updateState ::
 updateState actionChan plotAreaTV itemMapTV s action =
   case action of
     (NewPlotArea pa) ->
-      ((s & state_plotArea .~ pa) <#) $ liftIO $ do
+      (s' <#) $ liftIO $ do
         atomically $ writeTVar plotAreaTV pa
+        _ <- canvasDrawPlot s'
         return NoOp
+      where
+      s' = s & state_plotArea .~ pa
     (NewAccuracy (name, pac)) ->
-      ((s & state_item_accuracies . at name .~ Just pac) <#) $ liftIO $ do
+      (s' <#) $ liftIO $ do
         atomically $ do
           itemMap <- readTVar itemMapTV
           case itemMap ^. at name of
@@ -105,7 +111,10 @@ updateState actionChan plotAreaTV itemMapTV s action =
               (item, _pac) <- readTVar fnTV
               writeTVar fnTV (item, pac)
             _ -> pure ()
+        _ <- canvasDrawPlot s'
         return NoOp
+        where
+        s' = s & state_item_accuracies . at name .~ Just pac
     (NewPlotItem (name, plotItem)) ->
       (s' <#) $ liftIO $ do
         (itemTV, isNew) <- atomically $ do
@@ -143,13 +152,19 @@ updateState actionChan plotAreaTV itemMapTV s action =
     (NewWorker (name, tid)) ->
       noEff $ s & state_item_workers . at name .~ Just tid
     (NewEnclosureSegments (name, shouldAppend, scaling, encl)) ->
-      noEff $
-        s & state_item_encls . at name %~ addEncl
+        (s' <#) $ liftIO $ do
+          _ <- canvasDrawPlot s'
+          return NoOp
       where
-      addEncl (Just (_, oldEncl))
-        | shouldAppend = Just $ (scaling, oldEncl ++ encl)
+      s' = s & state_item_encls . at name %~ addEncl
+      addEncl (Just (oldScaling, oldEncl))
+        | shouldAppend && oldScaling == scaling = Just $ (scaling, oldEncl ++ encl)
       addEncl _ = Just (scaling, encl)
-    SelectItem maybeItemName -> noEff $ s & state_selectedItem .~ maybeItemName
+    SelectItem maybeItemName -> (s' <#) $ liftIO $ do
+      _ <- canvasDrawPlot s'
+      return NoOp
+      where
+      s' = s & state_selectedItem .~ maybeItemName
     NoOp -> noEff s
 
 
@@ -558,23 +573,39 @@ hQ, wQ :: Rational
 hQ = toRational h
 wQ = toRational w
 
+hD, wD :: Double
+hD = fromInteger h
+wD = fromInteger w
+
 viewPlot :: State -> [View Action]
 viewPlot State {..} =
     [
-        -- text (ms transformS),
+        -- text $ ms $ show $ map getPoints $ moveSelectedLast $ Map.toList _state_item_encls,
         div_
           [
             Miso.style_ (Map.singleton "font-size" "12pt")
           ]
           [
-            svg_
-              [ viewHeightAttr, viewWidthAttr
-              ] $
-                [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
-                ++ (concat $ map renderEnclosure $ moveSelectedLast $ Map.toList _state_item_encls)
-                ++ concat xGuides ++ concat yGuides
+            canvas_ 
+              [ Miso.id_ "canvas",
+                Miso.width_ $ ms $ show w,
+                Miso.height_ $ ms $ show h,
+                Miso.style_ (Map.singleton "border" "1px solid black")
+                ] $ []
+                -- [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
+                -- ++ (concat $ map renderEnclosure $ Map.toList _state_fn_encls)
+                -- ++ concat xGuides ++ concat yGuides
           ]
     ]
+    where
+
+canvasDrawPlot :: State -> IO ()
+canvasDrawPlot State {..} = do
+    ctx <- getCtx
+    clearCanvas ctx
+    -- Canvas.transform ctx
+    mapM_ (drawEnclosure ctx) $ enclosures
+    save ctx
     where
     moveSelectedLast = aux Nothing
       where
@@ -586,59 +617,38 @@ viewPlot State {..} =
         | otherwise =
           this : aux msel rest
 
-    viewHeightAttr = Svg.height_ (ms (q2d hQ))
-    viewWidthAttr = Svg.width_ (ms (q2d wQ))
+    enclosures =
+      reverse $ 
+        zip ((isJust _state_selectedItem) : repeat False) $ map getPoints $ 
+          moveSelectedLast $ Map.toList _state_item_encls
+
+    drawEnclosure ctx (isSelected, polygons) =
+      do
+      setStyle
+      mapM_ (drawPolygon ctx) polygons
+      where
+      setStyle
+        | isSelected =
+          do
+          fillStyle 255 192 203 0.7 ctx
+          strokeStyle 0 0 0 1 ctx
+        | otherwise =
+          do
+          fillStyle 255 192 2013 0.4 ctx
+          strokeStyle 0 0 0 0.7 ctx
+      
     Rectangle xL xR yL yR = _state_plotArea
+    transformPt (x,y) = (transformX x, transformY y)
     -- [xLd, xRd, yLd, yRd] = map q2d [xL, xR, yL, yR]
     transformX x = (x-xL)*wQ/(xR-xL)
     transformY y = hQ-(y-yL)*hQ/(yR-yL)
-    xGuides =
-      [ let xiMS = ms (q2d $ transformX xi) in
-        [line_
-         [x1_ xiMS, x2_ xiMS, y1_ "0", y2_ (ms (q2d hQ)),
-          stroke_ "black", strokeDasharray_ "1 3"
-         ] []
-         ,
-         text_ [x_ xiMS, y_ (ms (q2d hQ - 20))] [text (ms (q2d xi))]
-        ]
-      | xi <- xGuidePoints
-      ]
-      where
-      xGuidePoints = [x1, x1+gran .. xR]
-      gran = 10.0 ^^ (round $ logBase 10 (q2d $ (xR - xL)/10) :: Int)
-      x1 = gran * (fromInteger $ ceiling (xL / gran)) :: Rational
-    yGuides =
-      [ let yiMS = ms (q2d $ transformY yi) in
-        [line_
-         [y1_ yiMS, y2_ yiMS, x1_ "0", x2_ (ms (q2d wQ)),
-          stroke_ "black", strokeDasharray_ "1 3"
-         ] []
-         ,
-         text_ [y_ yiMS, x_ (ms (q2d wQ - 30))] [text (ms (q2d yi))]
-        ]
-      | yi <- yGuidePoints
-      ]
-      where
-      yGuidePoints = [y1, y1+gran .. yR]
-      gran = 10.0 ^^ (round $ logBase 10 (q2d $ (yR - yL)/10) :: Int)
-      y1 = gran * (fromInteger $ ceiling (yL / gran)) :: Rational
 
-    renderEnclosure (itemName, ((scalingX, scalingY), enclosure)) =
-      map renderSegment enclosure
+    getPoints (_, ((scalingX, scalingY), enclosure)) =
+      map transformSegment enclosure
       where
-      renderSegment (pointsPre, _) =
-        polygon_  (points_ pointsMS : style) []
+      transformSegment (pointsPre, _) =
+        map transformPt pointsPre
         where
-        style =
-          case _state_selectedItem of
-            Just selectedName | selectedName == itemName ->
-              [stroke_ "black", fill_ "#ffc0cb", fillOpacity_ "0.7"]
-            _ ->
-              [stroke_ "#707070", fill_ "#ffc0cb", fillOpacity_ "0.4"]
-        pointsMS = ms $ intercalate " " $ map showPoint points
-        showPoint (x,y) = show x ++ "," ++ show y
-        -- showR :: Rational -> String
-        -- showR q = show $ (fromRational q :: Double)
         transformPt (x,y) = (trX x, trY y)
         trX x
           | sameScaleX = (x - shiftX)
@@ -654,5 +664,24 @@ viewPlot State {..} =
         rescaleY = q2d $ hQ/((yR-yL) *scalingY)
         points = map transformPt pointsPre
 
+drawPolygon :: Canvas.Context -> [(Double, Double)] -> IO ()
+drawPolygon ctx ((x1,y1):points) = do
+  beginPath ctx
+  moveTo x1 y1 ctx
+  mapM_ (\(xi,yi) -> lineTo xi yi ctx) points
+  lineTo x1 y1 ctx
+  fill ctx
+  stroke ctx
+
+-- clearCanvas :: IO ()
+clearCanvas ctx = do
+  clearRect 0 0 hD wD ctx
+
 s2ms :: String -> MisoString
 s2ms = ms
+
+foreign import javascript unsafe "$r = document.getElementById('canvas').getContext('2d');"
+  getCtx :: IO Canvas.Context
+
+foreign import javascript unsafe "$1.globalCompositeOperation = 'destination-over';"
+  setGlobalCompositeOperation :: Canvas.Context -> IO ()

@@ -52,28 +52,6 @@ lampFractal =
     5
     (Rectangle (-0.625) 0 (-0.5) 0.25)
 
-treeFractal :: AffineFractal
-treeFractal =
-  AffineFractal 
-    [Curve2D (0,0.5) (s2rx "0") (s2rx "x-0.5")] 
-    [
-      ((0.5,-0.5,-0.25),(0.5,0.5,0.25),(0,0,1))
-    , ((0.5,0.5,0.25),(-0.5,0.5,0.25),(0,0,1))
-    ] 
-    5
-    (Rectangle (-1) 1 (-0.5) 1)
-
-umbrellaFractal :: AffineFractal
-umbrellaFractal =
-  AffineFractal 
-    [Curve2D (0,1) (s2rx "0") (s2rx "x-1")] 
-    [
-      ((0.5,-0.25,-0.25),(0.5,0.25,0.25),(0,0,1))
-    , ((0.5,0.25,0.25),(-0.5,0.25,0.25),(0,0,1))
-    ] 
-    5
-    (Rectangle (-0.6) 0.6 (-1) 0.6)
-
 
 
 -- affineFractal :: [Curve2D] -> [AffineTransform Rational] -> Int -> AffineFractal

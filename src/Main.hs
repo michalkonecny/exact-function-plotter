@@ -23,7 +23,7 @@ import Text.Printf
 
 import Data.List (find)
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes, isJust)
+import Data.Maybe (isJust)
 -- import Data.Ratio ((%))
 
 -- | Miso framework import
@@ -622,10 +622,6 @@ canvasDrawPlot State {..} = do
           moveSelectedLast $ Map.toList _state_item_encls
 
     Rectangle xL xR yL yR = _state_plotArea
-    transformPt (x,y) = (transformX x, transformY y)
-    -- [xLd, xRd, yLd, yRd] = map q2d [xL, xR, yL, yR]
-    transformX x = (x-xL)*wQ/(xR-xL)
-    transformY y = hQ-(y-yL)*hQ/(yR-yL)
 
     getPoints (_, ((scalingX, scalingY), enclosure)) =
       map transformSegment enclosure
@@ -646,7 +642,6 @@ canvasDrawPlot State {..} = do
         shiftY = q2d $ yL * scalingY
         rescaleX = q2d $ wQ/((xR-xL) *scalingX)
         rescaleY = q2d $ hQ/((yR-yL) *scalingY)
-        points = map transformPt pointsPre
 
 s2ms :: String -> MisoString
 s2ms = ms

@@ -2,6 +2,7 @@ resolver: lts-9.21
 
 packages:
 - '.'
+- 'canvas'
 - 'cdar'
 # - 'mixed-types-num'
 # - 'aern2/aern2-mp'
@@ -18,6 +19,8 @@ extra-deps:
 flags:
   miso:
     jsaddle: true
+  function-plotter-canvas:
+    stubs: true
   # aern2-mp:
   #   UseCDAR: true
   # #  UseCDAR: false

@@ -34,11 +34,10 @@ import Miso.String (MisoString, ms, fromMisoString, ToMisoString(..))
 -- import Miso.Svg as Svg
 -- import Data.Aeson.Types
 
--- Javascript Canvas
-import JavaScript.Web.Canvas as Canvas hiding (Left, Right)
-
 -- import qualified Data.CDAR as CDAR
 -- import Data.CDAR (Dyadic)
+
+import qualified CanvasPlotter
 
 import Rectangle
 import Expression
@@ -601,11 +600,11 @@ viewPlot State {..} =
 
 canvasDrawPlot :: State -> IO ()
 canvasDrawPlot State {..} = do
-    ctx <- getCtx
-    clearCanvas ctx
+    ctx <- CanvasPlotter.getContext
+    CanvasPlotter.clearCanvas ctx (hD,wD)
     -- Canvas.transform ctx
-    mapM_ (drawEnclosure ctx) $ enclosures
-    save ctx
+    mapM_ (CanvasPlotter.drawEnclosure ctx) $ enclosures
+    -- save ctx
     where
     moveSelectedLast = aux Nothing
       where
@@ -622,21 +621,6 @@ canvasDrawPlot State {..} = do
         zip ((isJust _state_selectedItem) : repeat False) $ map getPoints $ 
           moveSelectedLast $ Map.toList _state_item_encls
 
-    drawEnclosure ctx (isSelected, polygons) =
-      do
-      setStyle
-      mapM_ (drawPolygon ctx) polygons
-      where
-      setStyle
-        | isSelected =
-          do
-          fillStyle 255 192 203 0.7 ctx
-          strokeStyle 0 0 0 1 ctx
-        | otherwise =
-          do
-          fillStyle 255 192 2013 0.4 ctx
-          strokeStyle 0 0 0 0.7 ctx
-      
     Rectangle xL xR yL yR = _state_plotArea
     transformPt (x,y) = (transformX x, transformY y)
     -- [xLd, xRd, yLd, yRd] = map q2d [xL, xR, yL, yR]
@@ -664,24 +648,5 @@ canvasDrawPlot State {..} = do
         rescaleY = q2d $ hQ/((yR-yL) *scalingY)
         points = map transformPt pointsPre
 
-drawPolygon :: Canvas.Context -> [(Double, Double)] -> IO ()
-drawPolygon ctx ((x1,y1):points) = do
-  beginPath ctx
-  moveTo x1 y1 ctx
-  mapM_ (\(xi,yi) -> lineTo xi yi ctx) points
-  lineTo x1 y1 ctx
-  fill ctx
-  stroke ctx
-
--- clearCanvas :: IO ()
-clearCanvas ctx = do
-  clearRect 0 0 hD wD ctx
-
 s2ms :: String -> MisoString
 s2ms = ms
-
-foreign import javascript unsafe "$r = document.getElementById('canvas').getContext('2d');"
-  getCtx :: IO Canvas.Context
-
-foreign import javascript unsafe "$1.globalCompositeOperation = 'destination-over';"
-  setGlobalCompositeOperation :: Canvas.Context -> IO ()

@@ -1,0 +1,30 @@
+name: function-plotter-canvas
+version: 0.1.0.0
+cabal-version: 1.24
+build-type: Simple
+synopsis: canvas plotting layer
+description:
+    A canvas plotting layer: a ghcjs version + a mock ghc-friendly version
+category: Maths
+author: Michal Konecny
+
+flag stubs
+  manual: True
+  default:
+    False
+  description:
+    Compile without ghcjs, using stubs.
+    
+library
+    exposed-modules:
+      CanvasPlotter
+    build-depends:
+        base < 5
+    if flag(stubs)
+      hs-source-dirs: src-mock
+    else
+      hs-source-dirs: src-ghcjs
+      build-depends:
+          ghcjs-dom, ghcjs-base
+    default-language: Haskell2010
+    ghc-options: -threaded -Wall -ferror-spans

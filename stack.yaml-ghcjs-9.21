@@ -10,6 +10,7 @@ setup-info:
 
 packages:
 - '.'
+- 'canvas'
 - 'cdar'
 # - 'mixed-types-num'
 # - 'aern2/aern2-mp'

@@ -58,7 +58,7 @@ main = do
   continueWithVars actionChan plotAreaTV itemMapTV =
     runJSaddle undefined $ startApp App {..}
     where
-    initialAction = NoOp
+    initialAction = SelectItem Nothing
     model  = State Nothing initialPlotArea Map.empty Map.empty Map.empty Map.empty
     update = flip $ updateState actionChan plotAreaTV itemMapTV
     view   = viewState
@@ -602,9 +602,9 @@ canvasDrawPlot :: State -> IO ()
 canvasDrawPlot State {..} = do
     ctx <- CanvasPlotter.getContext
     CanvasPlotter.clearCanvas ctx (hD,wD)
-    -- Canvas.transform ctx
+    drawXGridLines ctx
+    drawYGridLines ctx
     mapM_ (CanvasPlotter.drawEnclosure ctx) $ enclosures
-    -- save ctx
     where
     moveSelectedLast = aux Nothing
       where
@@ -642,6 +642,38 @@ canvasDrawPlot State {..} = do
         shiftY = q2d $ yL * scalingY
         rescaleX = q2d $ wQ/((xR-xL) *scalingX)
         rescaleY = q2d $ hQ/((yR-yL) *scalingY)
+
+    transformX x = (x-xL)*wQ/(xR-xL)
+    transformY y = hQ-(y-yL)*hQ/(yR-yL)
+
+    drawXGridLines ctx =
+      do
+      mapM_ drawGridLine xGuidePoints 
+      where
+      drawGridLine xi =
+        do
+        CanvasPlotter.drawGridLine ctx (xiD,0) (xiD,hD)
+        CanvasPlotter.drawText ctx (xiD, hD-12) (printf "%g" (q2d xi)) 10
+        where
+        xiD = q2d $ transformX xi
+      xGuidePoints = [x1, x1+gran .. xR]
+      gran = 10.0 ^^ (round $ logBase 10 (q2d $ (xR - xL)/10) :: Int)
+      x1 = gran * (fromInteger $ ceiling (xL / gran)) :: Rational
+
+    drawYGridLines ctx =
+      do
+      mapM_ drawGridLine yGuidePoints 
+      where
+      drawGridLine yi =
+        do
+        CanvasPlotter.drawGridLine ctx (0,yiD) (wD,yiD)
+        CanvasPlotter.drawText ctx (wD-40, yiD) (printf "%g" (q2d yi)) 10
+        where
+        yiD = q2d $ transformY yi
+      yGuidePoints = [y1, y1+gran .. yR]
+      gran = 10.0 ^^ (round $ logBase 10 (q2d $ (yR - yL)/10) :: Int)
+      y1 = gran * (fromInteger $ ceiling (yL / gran)) :: Rational
+
 
 s2ms :: String -> MisoString
 s2ms = ms

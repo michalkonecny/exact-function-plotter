@@ -40,6 +40,7 @@ drawText :: Context -> (Double, Double) -> String -> Double -> IO ()
 drawText ctx (x,y) t size =
   do
   flip font ctx $ fromString $ show size ++ "px Arial"
+  fillStyle 0 0 0 1 ctx
   fillText (fromString t) x y ctx
 
 drawEnclosure :: Context -> (Bool, [[(Double,Double)]]) -> IO ()

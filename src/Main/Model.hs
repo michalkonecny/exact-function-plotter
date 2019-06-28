@@ -48,7 +48,7 @@ data State
     , _state_items :: Map.Map ItemName PlotItem
     , _state_item_accuracies :: Map.Map ItemName PlotAccuracy
     , _state_item_workers :: Map.Map ItemName ThreadId
-    , _state_item_encls :: Map.Map ItemName (Scaling, PAEnclosure Double)
+    , _state_item_encls :: Map.Map ItemName (Scaling, PAEnclosure Double, [RootEnclosure Double])
         -- the two rationals are x,y scaling factors, respectively
         -- the coordinates in the enclosure have been multiplied by these factors before converting to Double
         -- most of the time these factors agree with the plotting scale, allowing the coordinates to be used
@@ -72,7 +72,7 @@ state_item_accuracies :: Lens' State (Map.Map ItemName PlotAccuracy)
 state_item_accuracies wrap (State a b c d e f) = fmap (\d' -> State a b c d' e f) (wrap d)
 state_item_workers :: Lens' State (Map.Map ItemName ThreadId)
 state_item_workers wrap (State a b c d e f) = fmap (\e' -> State a b c d e' f) (wrap e)
-state_item_encls :: Lens' State (Map.Map ItemName (Scaling, PAEnclosure Double))
+state_item_encls :: Lens' State (Map.Map ItemName (Scaling, PAEnclosure Double, [RootEnclosure Double]))
 state_item_encls wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
 -- state_plotArea_Movement :: Lens' State PlotAreaMovement
 -- state_plotArea_Movement wrap (State a b c d e f) = fmap (\f' -> State a b c d e f') (wrap f)
@@ -115,6 +115,8 @@ type PAEnclosure t = [PASegment t]
 
 type PASegment t = ([(t, t)], Maybe Double) -- closed polyline
 
+type RootEnclosure t = ((t,t), (Maybe Int, Maybe Int)) -- location of some number of roots
+
 data Action
   = NoOp
   | SelectItem (Maybe ItemName)
@@ -122,7 +124,7 @@ data Action
   | NewPlotItem !(ItemName, PlotItem)
   | NewAccuracy !(ItemName, PlotAccuracy)
   | NewWorker !(ItemName, ThreadId)
-  | NewEnclosureSegments !(ItemName, Bool, (Rational, Rational), PAEnclosure Double)
+  | NewEnclosureSegments !(ItemName, Bool, (Rational, Rational), (PAEnclosure Double, [RootEnclosure Double]))
   -- | SetDrag Bool
   deriving (Show, Eq)
 

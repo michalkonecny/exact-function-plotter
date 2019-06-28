@@ -6,6 +6,7 @@ module CanvasPlotter
 , drawGridLine
 , drawText
 , drawEnclosure
+, drawRootEncl
 )
 where
 
@@ -27,3 +28,9 @@ drawText _ _ _ _ = pure ()
 
 drawEnclosure :: Context -> (Bool, [[(Double,Double)]]) -> IO ()
 drawEnclosure _ _ = pure ()
+
+type RootEnclosure t = ((t,t), (Maybe Int, Maybe Int)) -- location of some number of roots
+
+drawRootEncl :: Context -> Double -> RootEnclosure Double -> IO ()
+drawRootEncl _ _ _ = pure ()
+

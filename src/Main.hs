@@ -150,15 +150,15 @@ updateState actionChan plotAreaTV itemMapTV s action =
           & state_item_encls . at name .~ Nothing
     (NewWorker (name, tid)) ->
       noEff $ s & state_item_workers . at name .~ Just tid
-    (NewEnclosureSegments (name, shouldAppend, scaling, encl)) ->
+    (NewEnclosureSegments (name, shouldAppend, scaling, (encl, rootEncls))) ->
         (s' <#) $ liftIO $ do
           _ <- canvasDrawPlot s'
           return NoOp
       where
       s' = s & state_item_encls . at name %~ addEncl
-      addEncl (Just (oldScaling, oldEncl))
-        | shouldAppend && oldScaling == scaling = Just $ (scaling, oldEncl ++ encl)
-      addEncl _ = Just (scaling, encl)
+      addEncl (Just (oldScaling, oldEncl, oldRoots))
+        | shouldAppend && oldScaling == scaling = Just $ (scaling, oldEncl ++ encl, oldRoots ++ rootEncls)
+      addEncl _ = Just (scaling, encl, rootEncls)
     SelectItem maybeItemName -> (s' <#) $ liftIO $ do
       _ <- canvasDrawPlot s'
       return NoOp
@@ -231,28 +231,40 @@ enclWorker actionChan plotAreaTV itemTV name =
     processBatch True batch1
     mapM_ (processBatch False) batches
     where
-    batch1 : batches = splitIntoBatches 100 scaledEnclosure
+    batch1 : batches = splitIntoBatches 100 (map scaleSegGetRoots enclosure)
     processBatch isFirst batch = 
       do
       writeChan actionChan
-        (NewEnclosureSegments (name, (not isFirst) || appending, scaling, batch))
+        (NewEnclosureSegments (name, (not isFirst) || appending, scaling, (encl, concat rootEnclss)))
       yield
-    scaledEnclosure = map scaleSeg enclosure
+      where
+      (encl, rootEnclss) = unzip batch
     appending = isFunction && isPanned
     isFunction =
       case plotItem of
         PlotItem_Function _ -> True
         _ -> False
+    scaleSegGetRoots (pts, mwidth) =
+      ((map scalePt pts, mwidth), rootsEnclOfPts pts)
     scaling = (scalingX, scalingY)
-    scaleSeg (pts, mwidth) = (map scalePt pts, mwidth)
     scalePt (x,y) = (q2d $ scalingX * x, q2d $ scalingY * y)
     scalingX = wQ/(xR-xL)
     scalingY = hQ/(yR-yL)
+    rootsEnclOfPts pts
+      | noRoots = []
+      | otherwise = [((q2d $ scalingX * l, q2d $ scalingX * r), (Just 0, Nothing))]
+      where
+      (xs, ys) = unzip pts
+      noRoots = minimum ys > 0 || maximum ys < 0
+      l = minimum xs
+      r = maximum xs
+
     Rectangle xL xR yL yR = plotArea
     enclosure =
       case plotItem of
         PlotItem_Fractal fr -> computeFractalEnclosure fr plotArea plotAccuracy
         _ -> computeEnclosure plotItem plotArea plotAccuracy dom
+    
 
 ---------------------------------------------------------------------------------
 --- VIEW
@@ -584,17 +596,17 @@ viewPlot State {..} =
           [
             Miso.style_ (Map.singleton "font-size" "12pt")
           ]
-          [
+
+          ([
             canvas_ 
               [ Miso.id_ "canvas",
                 Miso.width_ $ ms $ show w,
                 Miso.height_ $ ms $ show h,
                 Miso.style_ (Map.singleton "border" "1px solid black")
                 ] $ []
-                -- [rect_ [x_ "0", y_ "0", viewHeightAttr, viewWidthAttr, stroke_ "black", fill_ "none"] []]
-                -- ++ (concat $ map renderEnclosure $ Map.toList _state_fn_encls)
-                -- ++ concat xGuides ++ concat yGuides
           ]
+          -- ++ [text $ ms $ show $ Map.toList _state_item_encls]
+          )
     ]
     where
 
@@ -604,44 +616,54 @@ canvasDrawPlot State {..} = do
     CanvasPlotter.clearCanvas ctx (hD,wD)
     drawXGridLines ctx
     drawYGridLines ctx
-    mapM_ (CanvasPlotter.drawEnclosure ctx) $ enclosures
+    mapM_ (drawEnclosureRoots ctx) $ enclosures
     where
+    drawEnclosureRoots ctx (isSel, (enclosure, rootEncls)) =
+      do
+      CanvasPlotter.drawEnclosure ctx (isSel, enclosure)
+      if isSel
+        then mapM_ (CanvasPlotter.drawRootEncl ctx yZero) rootEncls
+        else pure ()
+    yZero = q2d $ transformY 0
+
     moveSelectedLast = aux Nothing
       where
-      aux (Just sel) [] = [sel]
+      aux (Just sel) [] = [(True, sel)]
       aux _ [] = []
       aux msel (this@(itemName, _):rest)
         |  _state_selectedItem == Just itemName =
           aux (Just this) rest
         | otherwise =
-          this : aux msel rest
+          (False, this) : aux msel rest
 
     enclosures =
-      reverse $ 
-        zip ((isJust _state_selectedItem) : repeat False) $ map getPoints $ 
+        map getPoints $ 
           moveSelectedLast $ Map.toList _state_item_encls
 
     Rectangle xL xR yL yR = _state_plotArea
 
-    getPoints (_, ((scalingX, scalingY), enclosure)) =
-      map transformSegment enclosure
+    getPoints (isSel, (_, ((scalingX, scalingY), enclosure, rootEncls))) =
+      (isSel, (map transformSegment enclosure, map transformRootEncl rootEncls))
       where
       transformSegment (pointsPre, _) =
         map transformPt pointsPre
-        where
-        transformPt (x,y) = (trX x, trY y)
-        trX x
-          | sameScaleX = (x - shiftX)
-          | otherwise = (x - shiftX)*rescaleX
-        trY y
-          | sameScaleY = (q2d hQ) - (y - shiftY)
-          | otherwise = (q2d hQ) - (y - shiftY)*rescaleY
-        sameScaleX = (scalingX == wQ/(xR-xL))
-        sameScaleY = (scalingY == - hQ/(yR-yL))
-        shiftX = q2d $ xL * scalingX
-        shiftY = q2d $ yL * scalingY
-        rescaleX = q2d $ wQ/((xR-xL) *scalingX)
-        rescaleY = q2d $ hQ/((yR-yL) *scalingY)
+      transformPt (x,y) = (trX x, trY y)
+      trX x
+        | sameScaleX = (x - shiftX)
+        | otherwise = (x - shiftX)*rescaleX
+      trY y
+        | sameScaleY = (q2d hQ) - (y - shiftY)
+        | otherwise = (q2d hQ) - (y - shiftY)*rescaleY
+      transformRootEncl ((l,r),rootNum)
+        | sameScaleX = ((l - shiftX, r - shiftX),rootNum)
+        | otherwise =
+            (((l - shiftX)*rescaleX,(r - shiftX)*rescaleX),rootNum)
+      sameScaleX = (scalingX == wQ/(xR-xL))
+      sameScaleY = (scalingY == - hQ/(yR-yL))
+      shiftX = q2d $ xL * scalingX
+      shiftY = q2d $ yL * scalingY
+      rescaleX = q2d $ wQ/((xR-xL) *scalingX)
+      rescaleY = q2d $ hQ/((yR-yL) *scalingY)
 
     transformX x = (x-xL)*wQ/(xR-xL)
     transformY y = hQ-(y-yL)*hQ/(yR-yL)

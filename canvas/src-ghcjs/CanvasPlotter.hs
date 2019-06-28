@@ -6,6 +6,7 @@ module CanvasPlotter
 , drawGridLine
 , drawText
 , drawEnclosure
+, drawRootEncl
 )
 where
 
@@ -29,25 +30,31 @@ clearCanvas ctx (h,w) = do
 drawGridLine :: Context -> (Double, Double) -> (Double, Double) -> IO ()
 drawGridLine ctx (x1,y1) (x2,y2) =
   do
+  save ctx
   beginPath ctx
   moveTo x1 y1 ctx
   lineTo x2 y2 ctx
   -- setLineDash [1,3] ctx -- should be supported in newer ghcjs
   strokeStyle 0 0 0 0.3 ctx
   stroke ctx
+  restore ctx
 
 drawText :: Context -> (Double, Double) -> String -> Double -> IO ()
 drawText ctx (x,y) t size =
   do
+  save ctx
   flip font ctx $ fromString $ show size ++ "px Arial"
   fillStyle 0 0 0 1 ctx
   fillText (fromString t) x y ctx
+  restore ctx
 
 drawEnclosure :: Context -> (Bool, [[(Double,Double)]]) -> IO ()
 drawEnclosure ctx (isSelected, polygons) =
   do
+  save ctx
   setStyle
   mapM_ (drawPolygon ctx) polygons
+  restore ctx
   where
   setStyle
     | isSelected =
@@ -68,6 +75,23 @@ drawPolygon ctx ((x1,y1):points) = do
   fill ctx
   stroke ctx
 drawPolygon ctx [] = pure ()
+
+type RootEnclosure t = ((t,t), (Maybe Int, Maybe Int)) -- location of some number of roots
+
+drawRootEncl :: Context -> Double -> RootEnclosure Double -> IO ()
+drawRootEncl ctx yZero rootEncl =
+  do
+  save ctx
+  beginPath ctx
+  moveTo l yZero ctx
+  lineTo r yZero ctx
+  lineWidth 5 ctx
+  lineCap LineCapRound ctx
+  strokeStyle 255 0 0 1 ctx
+  stroke ctx
+  restore ctx
+  where
+  ((l,r), (_, _)) = rootEncl
 
 foreign import javascript unsafe "$r = document.getElementById('canvas').getContext('2d');"
   getCtx :: IO Canvas.Context

@@ -21,7 +21,7 @@ import Language.Javascript.JSaddle (runJSaddle)
 
 import Text.Printf
 
-import Data.List (find)
+import Data.List (find, partition)
 import qualified Data.Map as Map
 import Data.Maybe (isJust)
 -- import Data.Ratio ((%))
@@ -254,10 +254,18 @@ enclWorker actionChan plotAreaTV itemTV name =
       | noRoots = []
       | otherwise = [((q2d $ scalingX * l, q2d $ scalingX * r), (Just 0, Nothing))]
       where
-      (xs, ys) = unzip pts
+      (_, ys) = unzip pts
       noRoots = minimum ys > 0 || maximum ys < 0
-      l = minimum xs
-      r = maximum xs
+      (ptsNeg, ptsNonneg) = partition (\(_,y) -> y < 0) pts
+      (ptsZ, ptsPos) = partition (\(_,y) -> y == 0) ptsNonneg
+      crossings = 
+        (map fst ptsZ) ++ 
+        (map zeroCrossing $ 
+          [(p1, p2) | p1 <- ptsNeg, p2 <- ptsZ ++ ptsPos] ++ 
+          [(p1, p2) | p1 <- ptsZ, p2 <- ptsPos] )
+      zeroCrossing ((x1,y1),(x2,y2)) = (x1*y2-x2*y1) / (y2-y1)
+      l = minimum crossings
+      r = maximum crossings
 
     Rectangle xL xR yL yR = plotArea
     enclosure =

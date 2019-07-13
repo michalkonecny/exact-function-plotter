@@ -23,7 +23,7 @@ import Text.Printf
 
 import Data.List (find, partition)
 import qualified Data.Map as Map
-import Data.Maybe (isJust)
+-- import Data.Maybe (isJust)
 -- import Data.Ratio ((%))
 
 -- | Miso framework import
@@ -329,6 +329,9 @@ viewHeader =
 viewAddItem :: State -> [View Action]
 viewAddItem _s@State{..} =
   [
+  --   text "Show roots:"
+  -- , input_ [ type_ "checkbox"]
+  -- , 
     text "Add: "
   , flip button_ [text "function"] [ onClick (NewPlotItem (freshName "f", (PlotItem_Function RXVarX)))]
   , flip button_ [text "sin(10x^2)"] [ onClick (NewPlotItem (freshName "sin(10x^2)", (PlotItem_Function fn_sineM)))]
@@ -629,7 +632,7 @@ canvasDrawPlot State {..} = do
     drawEnclosureRoots ctx (isSel, (enclosure, rootEncls)) =
       do
       CanvasPlotter.drawEnclosure ctx (isSel, enclosure)
-      if isSel
+      if isSel && False
         then mapM_ (CanvasPlotter.drawRootEncl ctx yZero) rootEncls
         else pure ()
     yZero = q2d $ transformY 0

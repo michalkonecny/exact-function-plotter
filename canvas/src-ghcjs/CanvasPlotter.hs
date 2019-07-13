@@ -14,6 +14,8 @@ import Data.String
 
 -- import Control.Lens as Lens hiding (view)
 
+import Control.Concurrent
+
 -- Javascript Canvas
 import JavaScript.Web.Canvas hiding (Context, getContext)
 import qualified JavaScript.Web.Canvas as Canvas
@@ -53,7 +55,7 @@ drawEnclosure ctx (isSelected, polygons) =
   do
   save ctx
   setStyle
-  mapM_ (drawPolygon ctx) polygons
+  mapM_ (drawPolygon ctx) $ zip [0..] polygons
   restore ctx
   where
   setStyle
@@ -66,15 +68,18 @@ drawEnclosure ctx (isSelected, polygons) =
       fillStyle 255 192 2013 0.4 ctx
       strokeStyle 0 0 0 0.7 ctx
 
-drawPolygon :: Context -> [(Double, Double)] -> IO ()
-drawPolygon ctx ((x1,y1):points) = do
+drawPolygon :: Context -> (Int, [(Double, Double)]) -> IO ()
+drawPolygon ctx (_, ((x1,y1):points)) = 
+  do
+  yield -- For some reason this reduced probability of "run-away" polygon vertices.
+        -- Moreover, removing the unused Int parameter increases this probability.
   beginPath ctx
   moveTo x1 y1 ctx
   mapM_ (\(xi,yi) -> lineTo xi yi ctx) points
   lineTo x1 y1 ctx
   fill ctx
   stroke ctx
-drawPolygon ctx [] = pure ()
+drawPolygon ctx (_, []) = pure ()
 
 type RootEnclosure t = ((t,t), (Maybe Int, Maybe Int)) -- location of some number of roots
 
